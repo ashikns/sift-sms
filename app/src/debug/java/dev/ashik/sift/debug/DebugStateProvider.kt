@@ -29,7 +29,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *     adb shell content query --uri content://dev.ashik.sift.debug/messages
  *     adb shell content call --uri content://dev.ashik.sift.debug --method awaitIdle
  *     adb shell content call --uri content://dev.ashik.sift.debug --method markSpam --arg <messageId>
- *     adb shell content call --uri content://dev.ashik.sift.debug --method forgetLearning
+ *     adb shell content call --uri content://dev.ashik.sift.debug --method forgetLearning [--arg <messageId>]
  *     adb shell content call --uri content://dev.ashik.sift.debug --method seedHistory --arg <count>
  *     adb shell content call --uri content://dev.ashik.sift.debug --method seedStats
  *     adb shell content call --uri content://dev.ashik.sift.debug --method rescan
@@ -80,14 +80,10 @@ class DebugStateProvider : ContentProvider() {
                     "awaitIdle" -> out.putBoolean("idle", awaitIdle())
                     "markSpam", "markNotSpam" -> {
                         val label = if (method == "markSpam") UserLabel.SPAM else UserLabel.HAM
-                        val result = graph.feedback.markMessages(listOf(arg!!.toLong()), label)
-                        out.putLong("batchId", result.batchId)
-                        out.putInt("marked", result.marked)
-                        out.putInt("moved", result.moved)
+                        out.putBoolean("marked", graph.feedback.markMessages(listOf(arg!!.toLong()), label) != null)
                     }
-                    "undo" -> graph.feedback.undo(arg!!.toLong())
                     "forgetLearning" -> {
-                        graph.feedback.forgetLearned(graph.db.trainingExamples().all().map { it.messageId })
+                        graph.feedback.forgetLearned(arg?.let { listOf(it.toLong()) } ?: graph.db.trainingExamples().all().map { it.messageId })
                         graph.engine.awaitIdle()
                     }
                     "reconcile" -> graph.sync.fullReconcile()

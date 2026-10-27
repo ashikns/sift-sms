@@ -77,21 +77,16 @@ data class ContactCacheEntity(
     val photoUri: String?,
 )
 
-@Entity(tableName = "feedback_events", indices = [Index(value = ["batchId"]), Index(value = ["createdAt"])])
+/** One explicit mark by the user, for stats. */
+@Entity(tableName = "feedback_events", indices = [Index(value = ["createdAt"])])
 data class FeedbackEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val batchId: Long,
-    val kind: Int,
     val messageId: Long,
-    /** The new label (user label code for EXPLICIT, effective label code for AUTO_MOVE). */
+    /** The user label code. */
     val label: Int,
-    val prevUserLabel: Int?,
-    val prevEffectiveLabel: Int,
-    val prevEffectiveSource: String,
     /** What the engine said before the mark: a disagreement counts as a correction in stats. */
     val engineLabelAtMark: Int?,
     val createdAt: Long,
-    val undone: Boolean = false,
 )
 
 /** A labeled message the spam engine learns from (spamcore's ExampleStore). */

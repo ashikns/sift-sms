@@ -44,7 +44,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -81,7 +80,6 @@ import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.ThreadMessageRow
 import dev.ashik.sift.data.db.UserLabelCode
 import dev.ashik.sift.spam.CueCodec
-import dev.ashik.sift.spam.FeedbackService
 import dev.ashik.sift.spamcore.Reason
 import dev.ashik.sift.spamcore.SenderKind
 import dev.ashik.sift.spamcore.UserLabel
@@ -91,6 +89,8 @@ import dev.ashik.sift.ui.components.rememberGraph
 import dev.ashik.sift.ui.components.sameDay
 import dev.ashik.sift.ui.components.timeOfDay
 import dev.ashik.sift.ui.navigation.ThreadKey
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -127,13 +127,14 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     LaunchedEffect(messages) { messages?.let(vm::markReadIfNeeded) }
     val resources = LocalResources.current
     LaunchedEffect(vm) {
-        vm.feedback.collect { result ->
-            if (result.marked == 0) return@collect
-            val action = snackbar.showSnackbar(
-                feedbackMessage(resources, result), actionLabel = resources.getString(R.string.action_undo),
-                duration = SnackbarDuration.Long,
-            )
-            if (action == SnackbarResult.ActionPerformed) vm.undo(result.batchId)
+        // After a mark, "Re-checking now…" stays up until the retrained model has re-checked this thread; a newer mark
+        // takes over the snackbar.
+        vm.rechecks.collectLatest { rechecked ->
+            coroutineScope {
+                val shown = launch { snackbar.showSnackbar(resources.getString(R.string.snackbar_rechecking), duration = SnackbarDuration.Indefinite) }
+                rechecked.join()
+                shown.cancel() // cancelling showSnackbar removes the snackbar
+            }
         }
     }
 
@@ -238,15 +239,6 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { confirmDeleteThread = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
-    }
-}
-
-private fun feedbackMessage(resources: android.content.res.Resources, result: FeedbackService.Result): String {
-    val base = resources.getString(if (result.label == UserLabel.SPAM) R.string.snackbar_marked_spam else R.string.snackbar_marked_not_spam)
-    return if (result.moved > 0) {
-        base + " · " + resources.getQuantityString(R.plurals.snackbar_moved_similar, result.moved, result.moved)
-    } else {
-        base
     }
 }
 

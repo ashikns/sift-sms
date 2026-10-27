@@ -52,11 +52,3 @@ object ClassState {
     const val PENDING = 0
     const val DONE = 1
 }
-
-object FeedbackKind {
-    /** The user marked this message. */
-    const val EXPLICIT = 0
-
-    /** A similar message that moved because of an explicit mark (undone together). */
-    const val AUTO_MOVE = 1
-}

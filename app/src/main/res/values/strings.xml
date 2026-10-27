@@ -53,12 +53,7 @@
     <string name="action_close_selection">Cancel selection</string>
     <string name="possible_spam">Possible spam</string>
     <string name="you_prefix">You: %1$s</string>
-    <string name="snackbar_marked_spam">Marked as spam</string>
-    <string name="snackbar_marked_not_spam">Marked as not spam</string>
-    <plurals name="snackbar_moved_similar">
-        <item quantity="one">%d similar message moved</item>
-        <item quantity="other">%d similar messages moved</item>
-    </plurals>
+    <string name="snackbar_rechecking">Re-checking now…</string>
     <plurals name="delete_conversations_title">
         <item quantity="one">Delete conversation?</item>
         <item quantity="other">Delete %d conversations?</item>

@@ -78,9 +78,15 @@ interface MessageDao {
 
     @Query(
         "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
-            "WHERE m.type = 1 AND c.userLabel IS NULL ORDER BY m.date DESC, m.id DESC",
+            "WHERE m.type = 1 AND c.userLabel IS NULL AND m.threadId NOT IN (:skipThreads) ORDER BY m.date DESC, m.id DESC",
     )
-    suspend fun unlabeledIncomingIds(): List<Long>
+    suspend fun unlabeledIncomingIds(skipThreads: List<Long>): List<Long>
+
+    @Query(
+        "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
+            "WHERE m.type = 1 AND c.userLabel IS NULL AND m.threadId IN (:threadIds) ORDER BY m.date DESC, m.id DESC",
+    )
+    suspend fun unlabeledIncomingIdsIn(threadIds: List<Long>): List<Long>
 
     @Query(
         "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
@@ -177,17 +183,6 @@ interface ClassificationDao {
 
     @Query("DELETE FROM classifications WHERE messageId IN (:ids)")
     suspend fun deleteIds(ids: List<Long>)
-
-    @Query(
-        "UPDATE classifications SET effectiveLabel = :label, effectiveSource = :source WHERE messageId = :id",
-    )
-    suspend fun setEffective(id: Long, label: Int, source: String)
-
-    @Query(
-        "UPDATE classifications SET userLabel = :userLabel, userLabeledAt = :at, effectiveLabel = :effective, " +
-            "effectiveSource = :source WHERE messageId = :id",
-    )
-    suspend fun setUserLabel(id: Long, userLabel: Int?, at: Long?, effective: Int, source: String)
 }
 
 @Dao
@@ -246,22 +241,16 @@ interface FeedbackDao {
     @Upsert
     suspend fun insertAll(events: List<FeedbackEventEntity>)
 
-    @Query("SELECT * FROM feedback_events WHERE batchId = :batchId AND undone = 0 ORDER BY id DESC")
-    suspend fun activeBatch(batchId: Long): List<FeedbackEventEntity>
-
-    @Query("UPDATE feedback_events SET undone = 1 WHERE batchId = :batchId")
-    suspend fun markUndone(batchId: Long)
-
-    /** Marks whose learning entries were deleted: no longer counted, and no Undo brings them back. */
-    @Query("UPDATE feedback_events SET undone = 1 WHERE kind = 0 AND messageId IN (:ids)")
+    /** Marks whose learning entries were deleted: no longer counted. */
+    @Query("DELETE FROM feedback_events WHERE messageId IN (:ids)")
     suspend fun retractMarks(ids: List<Long>)
 
-    @Query("SELECT COUNT(*) FROM feedback_events WHERE kind = 0 AND undone = 0 AND label = :label")
+    @Query("SELECT COUNT(*) FROM feedback_events WHERE label = :label")
     fun observeExplicitCount(label: Int): Flow<Int>
 
     @Query(
-        "SELECT (createdAt / 604800000) AS week, COUNT(*) AS count FROM feedback_events WHERE kind = 0 AND undone = 0 " +
-            "AND createdAt >= :since AND ((label = 1 AND COALESCE(engineLabelAtMark, 0) != 2) OR " +
+        "SELECT (createdAt / 604800000) AS week, COUNT(*) AS count FROM feedback_events " +
+            "WHERE createdAt >= :since AND ((label = 1 AND COALESCE(engineLabelAtMark, 0) != 2) OR " +
             "(label = 0 AND engineLabelAtMark = 2)) GROUP BY week",
     )
     suspend fun correctionsPerWeek(since: Long): List<WeekCount>

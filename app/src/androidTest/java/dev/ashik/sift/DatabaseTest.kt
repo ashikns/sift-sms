@@ -7,7 +7,6 @@ import dev.ashik.sift.data.db.ClassState
 import dev.ashik.sift.data.db.ClassificationEntity
 import dev.ashik.sift.data.db.ContactCacheEntity
 import dev.ashik.sift.data.db.FeedbackEventEntity
-import dev.ashik.sift.data.db.FeedbackKind
 import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MessageEntity
@@ -80,7 +79,9 @@ class DatabaseTest {
         assertEquals(LabelCode.SUSPICIOUS, c30.latestLabel)
 
         // The user's "not spam" wins over the engine and moves the conversation back.
-        db.classifications().setUserLabel(4, UserLabel.HAM.ordinal, 3000, LabelCode.HAM, Source.USER)
+        db.classifications().upsert(
+            db.classifications().get(4)!!.copy(userLabel = UserLabel.HAM.ordinal, userLabeledAt = 3000, effectiveLabel = LabelCode.HAM, effectiveSource = Source.USER),
+        )
         projector.rebuild(listOf(20L))
         assertEquals(Folder.INBOX, conversation(20).folder)
         assertEquals(listOf(10L, 20L, 30L), db.conversations().observeFolder(Folder.INBOX).first().map { it.conversation.threadId }.sorted())
@@ -153,10 +154,7 @@ class DatabaseTest {
                 ClassificationEntity(2, ClassState.DONE, userLabel = UserLabel.HAM.ordinal, userLabeledAt = 6, effectiveLabel = LabelCode.HAM, effectiveSource = Source.USER),
             ),
         )
-        fun mark(id: Long, label: UserLabel) = FeedbackEventEntity(
-            batchId = id, kind = FeedbackKind.EXPLICIT, messageId = id, label = label.ordinal, prevUserLabel = null,
-            prevEffectiveLabel = LabelCode.HAM, prevEffectiveSource = Source.ENGINE, engineLabelAtMark = LabelCode.HAM, createdAt = id,
-        )
+        fun mark(id: Long, label: UserLabel) = FeedbackEventEntity(messageId = id, label = label.ordinal, engineLabelAtMark = LabelCode.HAM, createdAt = id)
         db.feedback().insertAll(listOf(mark(1, UserLabel.SPAM), mark(2, UserLabel.HAM)))
         db.classifications().clearUserLabels(listOf(1L))
         db.feedback().retractMarks(listOf(1L))
@@ -167,7 +165,6 @@ class DatabaseTest {
         assertEquals(UserLabel.HAM.ordinal, db.classifications().get(2)!!.userLabel)
         assertEquals(0, db.feedback().observeExplicitCount(UserLabel.SPAM.ordinal).first())
         assertEquals(1, db.feedback().observeExplicitCount(UserLabel.HAM.ordinal).first())
-        assertEquals(emptyList<Long>(), db.feedback().activeBatch(1).map { it.messageId })
     }
 
     @Test

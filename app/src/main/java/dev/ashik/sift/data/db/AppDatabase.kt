@@ -17,7 +17,7 @@ import kotlinx.coroutines.Dispatchers
         TrainingExampleEntity::class,
         MessageEmbeddingEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

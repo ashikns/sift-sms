@@ -6,10 +6,10 @@ import dev.ashik.sift.data.db.ConversationRow
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.ThreadMessageRow
 import dev.ashik.sift.di.AppGraph
-import dev.ashik.sift.spam.FeedbackService
 import dev.ashik.sift.spamcore.UserLabel
 import dev.ashik.sift.ui.navigation.ThreadKey
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -32,8 +32,9 @@ class ThreadViewModel(private val graph: AppGraph, key: ThreadKey) : ViewModel()
         .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else graph.db.messages().observeThread(id, 500) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    private val _feedback = MutableSharedFlow<FeedbackService.Result>(extraBufferCapacity = 4)
-    val feedback: SharedFlow<FeedbackService.Result> = _feedback
+    /** For each mark, the job that re-checks this thread with the retrained model. */
+    private val _rechecks = MutableSharedFlow<Job>(extraBufferCapacity = 4)
+    val rechecks: SharedFlow<Job> = _rechecks
 
     init {
         val address = key.address
@@ -48,10 +49,8 @@ class ThreadViewModel(private val graph: AppGraph, key: ThreadKey) : ViewModel()
     val currentThreadId: Long? get() = threadId.value
 
     fun markMessage(messageId: Long, label: UserLabel) = viewModelScope.launch {
-        _feedback.emit(graph.feedback.markMessages(listOf(messageId), label))
+        graph.feedback.markMessages(listOf(messageId), label)?.let { _rechecks.emit(it) }
     }
-
-    fun undo(batchId: Long) = viewModelScope.launch { graph.feedback.undo(batchId) }
 
     fun deleteMessage(messageId: Long) = viewModelScope.launch { runCatching { graph.repository.deleteMessages(listOf(messageId)) } }
 

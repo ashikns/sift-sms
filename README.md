@@ -38,8 +38,8 @@ plain text, never clickable; long-press a message to select and copy all or part
      only ever counts together with a message's wording, so "Not spam" on a bank's card alerts clears that bank's
      other card alerts (under any route prefix: `AX-ICICIT-S` and `JD-ICICIT-T` are one sender), not its upsells or
      another sender's similar text.
-   - Then every message is re-checked with the new model, old ones included; the progress shows in the notification
-     shade.
+   - Then the open conversation is re-checked with the new model first ("Re-checking now…" shows until it's done),
+     then every other message, old ones included; the progress shows in the notification shade.
    - Deleting an entry under Settings → Learning entries removes that mark: Sift forgets it, retrains, and judges the
      message again on its own.
    - The embedding weights, message-feature weights and sender-type signals stay fixed. That way a mark on one

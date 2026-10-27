@@ -5,7 +5,6 @@ import dev.ashik.sift.data.db.AppDatabase
 import dev.ashik.sift.data.db.ClassState
 import dev.ashik.sift.data.db.ClassificationEntity
 import dev.ashik.sift.data.db.FeedbackEventEntity
-import dev.ashik.sift.data.db.FeedbackKind
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MessageEntity
 import dev.ashik.sift.data.db.MsgType
@@ -23,6 +22,7 @@ import dev.ashik.sift.spamcore.Verdict
 import dev.ashik.sift.spamcore.features.Features
 import dev.ashik.sift.telephony.AddressNormalizer
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -37,32 +37,29 @@ class RescoreService(
     private val coordinator: ClassificationCoordinator,
     private val projector: ConversationProjector,
 ) {
-    data class Outcome(val moved: Int, val threads: Set<Long>)
-
     /**
      * Serializes re-scores with the user's label changes (FeedbackService takes it too). A re-score reads a message's
-     * classification, computes, then writes; without the lock a background re-score that started before a mark or an
-     * Undo could write back the stale state over it.
+     * classification, computes, then writes; without the lock a background re-score that started before a mark could
+     * write back the stale state over it.
      */
     val lock = Mutex()
 
     /**
      * Right after an explicit mark: re-scores the recent window and the sender's other messages (every route of a DLT
      * sender: `AX-ICICIT-S` and `JD-ICICIT-T` are one sender) by content, so near-duplicates of the marked message move
-     * with it and the snackbar can count them.
+     * with it.
      */
-    suspend fun afterFeedback(batchId: Long, marked: List<MessageEntity>): Outcome {
+    suspend fun afterFeedback(marked: List<MessageEntity>) {
         val markedIds = marked.map { it.id }.toSet()
         val sids = marked.mapNotNull { Features.senderId(it.senderKey) }.toSet()
         val senderKeys = db.messages().incomingSenderKeys().filter { Features.senderId(it) in sids }
         val sameSender = db.messages().unlabeledIncomingFrom(senderKeys, 200)
         val recent = db.messages().recentUnlabeledIncoming(System.currentTimeMillis() - WINDOW_MS, 200)
-        val candidates = (sameSender + recent).distinctBy { it.id }.filter { it.id !in markedIds }
-        return rescore(candidates, batchId)
+        rescore((sameSender + recent).distinctBy { it.id }.filter { it.id !in markedIds })
     }
 
-    /** After a retrain: re-scores these messages (RecheckWorker goes through all of history in chunks), no undo records. */
-    suspend fun afterRetrain(messageIds: List<Long>): Outcome = rescore(db.messages().getAll(messageIds), batchId = null)
+    /** After a retrain: re-scores these messages (the marked messages' threads first, then RecheckWorker goes through the rest of history in chunks). */
+    suspend fun afterRetrain(messageIds: List<Long>) = rescore(db.messages().getAll(messageIds))
 
     /**
      * Messages whose mark was deleted: each gets the model's own verdict, applied as it comes (as a rescan does, without
@@ -77,12 +74,9 @@ class RescoreService(
         }
     }
 
-    private suspend fun rescore(candidates: List<MessageEntity>, batchId: Long?): Outcome = lock.withLock {
+    private suspend fun rescore(candidates: List<MessageEntity>) = lock.withLock {
         val updates = ArrayList<ClassificationEntity>()
-        val events = ArrayList<FeedbackEventEntity>()
         val threads = HashSet<Long>()
-        var moved = 0
-        val now = System.currentTimeMillis()
         for (m in candidates) {
             if (m.type != MsgType.INBOX) continue
             val computed = coordinator.compute(m) ?: continue
@@ -97,28 +91,15 @@ class RescoreService(
                 updates += entity
                 threads += m.threadId
             }
-            val folderChanged = (oldEffective == LabelCode.SPAM) != (newEffective == LabelCode.SPAM)
-            if (folderChanged) {
-                moved++
-                if (batchId != null) {
-                    events += FeedbackEventEntity(
-                        batchId = batchId, kind = FeedbackKind.AUTO_MOVE, messageId = m.id,
-                        label = newEffective, prevUserLabel = null, prevEffectiveLabel = oldEffective, prevEffectiveSource = previous?.effectiveSource ?: Source.PENDING,
-                        engineLabelAtMark = previous?.modelLabel, createdAt = now,
-                    )
-                }
-            }
         }
-        if (updates.isNotEmpty() || events.isNotEmpty()) {
+        if (updates.isNotEmpty()) {
             db.withWriteTransaction {
                 val relabeled = updates.filter { db.classifications().get(it.messageId)?.userLabel != null }.map { it.messageId }.toSet()
                 updates.removeAll { it.messageId in relabeled }
                 db.classifications().upsertAll(updates)
-                if (events.isNotEmpty()) db.feedback().insertAll(events)
                 projector.rebuild(threads)
             }
         }
-        Outcome(moved, threads)
     }
 
     companion object {
@@ -149,7 +130,7 @@ class RescoreService(
     }
 }
 
-/** Applies the user's spam / not-spam marks (the engine's only training signal), and supports Undo. */
+/** Applies the user's spam / not-spam marks (the engine's only training signal). */
 class FeedbackService(
     private val db: AppDatabase,
     private val engine: SpamEngine,
@@ -160,25 +141,22 @@ class FeedbackService(
     private val scheduler: WorkScheduler,
     private val appScope: CoroutineScope,
 ) {
-    data class Result(val batchId: Long, val label: UserLabel, val marked: Int, val moved: Int)
-
-    suspend fun markMessages(ids: Collection<Long>, label: UserLabel): Result {
+    /**
+     * Marks these messages and learns from them. Returns the job that re-checks their threads once the model has
+     * retrained (the rest of history follows in RecheckWorker), or null if none of them is incoming.
+     */
+    suspend fun markMessages(ids: Collection<Long>, label: UserLabel): Job? {
         val now = System.currentTimeMillis()
-        val batchId = now
         val messages = db.messages().getAll(ids.toList()).filter { it.type == MsgType.INBOX }
-        if (messages.isEmpty()) return Result(batchId, label, 0, 0)
+        if (messages.isEmpty()) return null
         val userCode = UserLabelCode.of(label)
         val effective = LabelCode.of(label)
+        val threads = messages.map { it.threadId }.toSet()
         rescore.lock.withLock { db.withWriteTransaction {
             val events = ArrayList<FeedbackEventEntity>()
             for (m in messages) {
                 val previous = db.classifications().get(m.id)
-                events += FeedbackEventEntity(
-                    batchId = batchId, kind = FeedbackKind.EXPLICIT, messageId = m.id,
-                    label = userCode, prevUserLabel = previous?.userLabel, prevEffectiveLabel = previous?.effectiveLabel ?: LabelCode.HAM,
-                    prevEffectiveSource = previous?.effectiveSource ?: Source.PENDING,
-                    engineLabelAtMark = previous?.modelLabel, createdAt = now,
-                )
+                events += FeedbackEventEntity(messageId = m.id, label = userCode, engineLabelAtMark = previous?.modelLabel, createdAt = now)
                 db.classifications().upsert(
                     (previous ?: ClassificationEntity(messageId = m.id, notified = true)).copy(
                         userLabel = userCode, userLabeledAt = now, effectiveLabel = effective, effectiveSource = Source.USER,
@@ -186,43 +164,12 @@ class FeedbackService(
                 )
             }
             db.feedback().insertAll(events)
-            projector.rebuild(messages.map { it.threadId }.toSet())
-        } }
-        engine.learn(messages.map { example(it, label, now) })
-        if (label == UserLabel.SPAM) messages.map { it.threadId }.distinct().forEach(notifier::cancelThread)
-        val outcome = rescore.afterFeedback(batchId, messages)
-        recheckAfterRetrain()
-        return Result(batchId, label, messages.size, outcome.moved)
-    }
-
-    suspend fun undo(batchId: Long) {
-        val events = db.feedback().activeBatch(batchId)
-        if (events.isEmpty()) return
-        val now = System.currentTimeMillis()
-        val threads = db.messages().threadsOf(events.map { it.messageId })
-        rescore.lock.withLock { db.withWriteTransaction {
-            for (e in events) {
-                when (e.kind) {
-                    FeedbackKind.EXPLICIT -> db.classifications().setUserLabel(
-                        e.messageId, e.prevUserLabel, if (e.prevUserLabel == null) null else now,
-                        e.prevEffectiveLabel, e.prevEffectiveSource,
-                    )
-                    FeedbackKind.AUTO_MOVE -> db.classifications().setEffective(e.messageId, e.prevEffectiveLabel, e.prevEffectiveSource)
-                }
-            }
-            db.feedback().markUndone(batchId)
             projector.rebuild(threads)
         } }
-        val explicit = events.filter { it.kind == FeedbackKind.EXPLICIT }
-        engine.forget(explicit.filter { it.prevUserLabel == null }.map { it.messageId })
-        val relearn = explicit.filter { it.prevUserLabel != null }
-        if (relearn.isNotEmpty()) {
-            val byId = db.messages().getAll(relearn.map { it.messageId }).associateBy { it.id }
-            engine.learn(relearn.mapNotNull { e ->
-                byId[e.messageId]?.let { example(it, UserLabelCode.toUserLabel(e.prevUserLabel!!), now) }
-            })
-        }
-        recheckAfterRetrain()
+        engine.learn(messages.map { example(it, label, now) })
+        if (label == UserLabel.SPAM) threads.forEach(notifier::cancelThread)
+        rescore.afterFeedback(messages)
+        return recheckAfterRetrain(threads)
     }
 
     /**
@@ -265,10 +212,13 @@ class FeedbackService(
         )
     }
 
-    private fun recheckAfterRetrain() {
-        appScope.launch {
-            engine.awaitIdle()
-            scheduler.enqueueRecheck()
-        }
+    /**
+     * Once the engine has retrained (after any mark that came in meanwhile, too): re-checks the unlabeled messages in
+     * [first] here, so the open thread shows the new verdicts first, then hands the rest of history to RecheckWorker.
+     */
+    private fun recheckAfterRetrain(first: Set<Long>): Job = appScope.launch {
+        engine.awaitIdle()
+        db.messages().unlabeledIncomingIdsIn(first.toList()).chunked(64).forEach { rescore.afterRetrain(it) }
+        scheduler.enqueueRecheck(skipThreads = first)
     }
 }

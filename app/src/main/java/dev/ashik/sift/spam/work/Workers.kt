@@ -42,9 +42,15 @@ class WorkScheduler(private val context: Context) {
         wm.enqueueUniqueWork(BACKFILL, if (rescan) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
     }
 
-    /** Re-checks all history with the model a retrain just produced, replacing a re-check still running for an older one. */
-    fun enqueueRecheck() {
-        wm.enqueueUniqueWork("recheck", ExistingWorkPolicy.REPLACE, OneTimeWorkRequestBuilder<RecheckWorker>().build())
+    /**
+     * Re-checks all history with the model a retrain just produced, except [skipThreads] (already re-checked with it),
+     * replacing a re-check still running for an older one.
+     */
+    fun enqueueRecheck(skipThreads: Collection<Long> = emptyList()) {
+        val request = OneTimeWorkRequestBuilder<RecheckWorker>()
+            .setInputData(workDataOf(RecheckWorker.KEY_SKIP_THREADS to skipThreads.toLongArray()))
+            .build()
+        wm.enqueueUniqueWork("recheck", ExistingWorkPolicy.REPLACE, request)
     }
 
     fun enqueueClassifyPending() {
@@ -184,9 +190,10 @@ class BackfillClassifyWorker(context: Context, params: WorkerParameters) : Corou
 
 /**
  * After a retrain: re-checks every incoming message without a user label, newest first, so what the user just taught
- * applies to all of history. The same rules as any re-score apply (model-only verdicts never move an Inbox message to
- * Spam). Shows its progress in a notification and runs as a foreground service when Android allows it; the next
- * retrain's re-check replaces one still running.
+ * applies to all of history. The threads of the messages just marked were re-checked first, right after the retrain, and
+ * are skipped. The same rules as any re-score apply (model-only verdicts never move an Inbox message to Spam). Shows its
+ * progress in a notification and runs as a foreground service when Android allows it; the next retrain's re-check
+ * replaces one still running.
  */
 class RecheckWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
@@ -207,7 +214,8 @@ class RecheckWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             Log.w(TAG, "re-check running without a foreground service", e)
         }
         try {
-            val ids = graph.db.messages().unlabeledIncomingIds()
+            val skip = inputData.getLongArray(KEY_SKIP_THREADS)?.toList().orEmpty()
+            val ids = graph.db.messages().unlabeledIncomingIds(skip)
             var done = 0
             var noticeAt = 0L
             for (chunk in ids.chunked(64)) {
@@ -226,9 +234,10 @@ class RecheckWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         }
     }
 
-    private companion object {
-        const val NOTICE_INTERVAL_MS = 500L
-        const val TAG = "SiftRecheck"
+    companion object {
+        const val KEY_SKIP_THREADS = "skipThreads"
+        private const val NOTICE_INTERVAL_MS = 500L
+        private const val TAG = "SiftRecheck"
     }
 }
 

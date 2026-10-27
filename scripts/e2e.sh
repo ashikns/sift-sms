@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end checks on the emulator: real SMS delivery (adb emu sms send), spam placement, notifications,
-# multipart, learning from feedback, Undo, the learning entries page, a rescan of all history, the re-check after a
+# multipart, learning from feedback, the learning entries page, a rescan of all history, the re-check after a
 # retrain, role loss + reconcile, Doze. Emulator only.
 #
 #   scripts/emulator.sh          # boot the AVD (once)
@@ -124,8 +124,7 @@ send_sms "$(num 5)" "$FAM_B"
 wait_until 15 folder_is "$(num 5)" 0 && pass "new scam family starts in Inbox (model misses it)" || fail "family B folder=$(conv_field "$(num 5)" folder)"
 idle
 RES=$(call markSpam "$(msg_field "$(num 4)" id)")
-MOVED=$(echo "$RES" | grep -oE 'moved=[0-9]+' | cut -d= -f2)
-[[ "${MOVED:-0}" -ge 1 ]] && pass "marking spam moved $MOVED similar message(s)" || fail "markSpam result: $RES"
+[[ "$RES" == *"marked=true"* ]] || fail "markSpam result: $RES"
 folder_is "$(num 4)" 1 && pass "the marked message's conversation moved to Spam" || fail "marked folder=$(conv_field "$(num 4)" folder)"
 folder_is "$(num 5)" 1 && [[ "$(msg_field "$(num 5)" reason)" == "SIMILAR_TO_SPAM" ]] \
   && pass "near-duplicate moved with SIMILAR_TO_SPAM" || fail "family B reason=$(msg_field "$(num 5)" reason)"
@@ -135,12 +134,6 @@ wait_until 15 folder_is "$(num 6)" 1 && pass "new variant from a new sender land
 notified "$FAM_C" && fail "learned spam was notified" || pass "learned spam not notified"
 call markNotSpam "$(msg_field "$(num 6)" id)" >/dev/null
 folder_is "$(num 6)" 0 && pass "not spam moves it back to Inbox" || fail "after markNotSpam folder=$(conv_field "$(num 6)" folder)"
-
-step "Undo"
-BATCH=$(call markSpam "$(msg_field "$(num 1)" id)" | grep -oE 'batchId=[0-9]+' | cut -d= -f2)
-folder_is "$(num 1)" 1 && pass "mark spam" || fail "mark spam folder=$(conv_field "$(num 1)" folder)"
-call undo "$BATCH" >/dev/null
-folder_is "$(num 1)" 0 && pass "undo restores Inbox" || fail "after undo folder=$(conv_field "$(num 1)" folder)"
 
 step "Learning entries"
 # Deleting an entry only takes effect, with one retrain, once the page is left: the engine forgets it and the
@@ -211,14 +204,14 @@ R0=$(rechecks)
 F0=$(seed_stat scamsFlagged)
 # (Matched here: the device shell strips quotes inside --where, and a "+" number then compares as a number.)
 SEED0=$($A shell content query --uri content://sms --projection _id:address 2>/dev/null | tr -d '\r' | grep -E "address=\+15550190000$" | field _id)
-BATCH0=$(call markNotSpam "$SEED0" | grep -oE 'batchId=[0-9]+' | cut -d= -f2)
+call markNotSpam "$SEED0" >/dev/null
 wait_until 30 recheck_progress && pass "re-check progress notification" || fail "no re-check progress notification"
 recheck_ran() { [[ "$(rechecks)" -gt "$R0" ]]; }
 wait_until 120 recheck_ran && pass "a re-check of all history ran after the retrain" || fail "no re-check after the mark"
 F1=$(seed_stat scamsFlagged)
 (( F1 <= F0 - 100 )) && pass "the re-check moved old copies out of Spam ($F0 -> $F1 flagged)" || fail "old copies still flagged: $F0 -> $F1"
 # Leave no "not spam" mark on a template that release_smoke.sh sends as spam.
-call undo "$BATCH0" >/dev/null
+call forgetLearning "$SEED0" >/dev/null
 $A shell input keyevent KEYCODE_HOME
 
 step "Role loss and reconcile"
