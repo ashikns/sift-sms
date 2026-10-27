@@ -78,6 +78,31 @@ abstract class CheckNoInternetTask : DefaultTask() {
     }
 }
 
+/**
+ * Fails a shrunk build if R8 stripped OrtTextEncoder.modelBytes. ONNX Runtime reads the model's weights straight from
+ * that memory mapping; without the reference the mapping is freed on the next GC and inference segfaults.
+ */
+abstract class CheckEncoderBufferKeptTask : DefaultTask() {
+    /** R8's usage.txt, written next to mapping.txt: everything R8 removed. */
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val usage: RegularFileProperty
+
+    @get:OutputFile
+    abstract val marker: RegularFileProperty
+
+    @TaskAction
+    fun run() {
+        val lines = usage.get().asFile.readLines()
+        val start = lines.indexOfFirst { it.startsWith("dev.ashik.sift.spamcore.encoder.OrtTextEncoder:") }
+        val removed = if (start < 0) emptyList() else lines.drop(start + 1).takeWhile { it.startsWith(" ") }
+        check(removed.none { "modelBytes" in it }) {
+            "R8 removed OrtTextEncoder.modelBytes: the memory-mapped model would be freed while ONNX Runtime uses it"
+        }
+        marker.get().asFile.writeText("ok\n")
+    }
+}
+
 androidComponents {
     onVariants { variant ->
         val name = variant.name.replaceFirstChar(Char::uppercase)
@@ -86,6 +111,14 @@ androidComponents {
             marker.set(layout.buildDirectory.file("intermediates/no_internet/${variant.name}.ok"))
         }
         tasks.matching { it.name == "package$name" }.configureEach { dependsOn(check) }
+        if (variant.isMinifyEnabled) {
+            val keep = tasks.register<CheckEncoderBufferKeptTask>("check${name}EncoderBufferKept") {
+                val mapping = variant.artifacts.get(SingleArtifact.OBFUSCATION_MAPPING_FILE)
+                usage.fileProvider(mapping.map { it.asFile.resolveSibling("usage.txt") })
+                marker.set(layout.buildDirectory.file("intermediates/encoder_buffer/${variant.name}.ok"))
+            }
+            tasks.matching { it.name == "package$name" }.configureEach { dependsOn(keep) }
+        }
     }
 }
 

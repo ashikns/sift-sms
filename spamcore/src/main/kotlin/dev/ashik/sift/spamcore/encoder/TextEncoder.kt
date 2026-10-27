@@ -4,6 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import dev.ashik.sift.spamcore.model.ModelBundle
+import java.lang.ref.Reference
 import java.nio.ByteBuffer
 import java.nio.LongBuffer
 
@@ -22,23 +23,35 @@ class OrtTextEncoder private constructor(
     private val inputIds: String,
     private val attentionMask: String,
     private val output: String,
-    @Suppress("unused") private val modelBytes: ByteBuffer?, // must outlive the session when ORT uses it in place
+    /**
+     * The memory-mapped model. ORT reads its weights in place, so this mapping must stay alive as long as the session:
+     * if it were garbage-collected, the mapping would be released and the next run would read freed memory (SIGSEGV).
+     * [embed] reads it through [Reference.reachabilityFence], which also stops R8 from deleting the field as unused.
+     */
+    private val modelBytes: ByteBuffer?,
 ) : TextEncoder {
 
     override fun embed(ids: LongArray): FloatArray {
         val shape = longArrayOf(1, ids.size.toLong())
         OnnxTensor.createTensor(env, LongBuffer.wrap(ids), shape).use { idsT ->
             OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(ids.size) { 1L }), shape).use { maskT ->
-                session.run(mapOf(inputIds to idsT, attentionMask to maskT)).use { result ->
-                    val tensor = result.get(output).orElseThrow() as OnnxTensor
-                    val fb = tensor.floatBuffer
-                    return FloatArray(fb.remaining()).also { fb.get(it) }
+                try {
+                    session.run(mapOf(inputIds to idsT, attentionMask to maskT)).use { result ->
+                        val tensor = result.get(output).orElseThrow() as OnnxTensor
+                        val fb = tensor.floatBuffer
+                        return FloatArray(fb.remaining()).also { fb.get(it) }
+                    }
+                } finally {
+                    Reference.reachabilityFence(modelBytes)
                 }
             }
         }
     }
 
-    override fun close() = session.close()
+    override fun close() {
+        session.close()
+        Reference.reachabilityFence(modelBytes)
+    }
 
     companion object {
         /** Creates the session from the bundle's encoder (memory-mapped when the source allows it) and warms it up. */

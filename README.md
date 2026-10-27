@@ -104,6 +104,8 @@ exact (1e-14).
 source scripts/env.sh                     # JAVA_HOME = Studio's JBR, SDK adb first on PATH
 ./gradlew :spamcore:test                  # ML engine: parity with the Python reference, trainer, engine
 ./gradlew :app:testDebugUnitTest          # app logic
+scripts/e2e.sh                            # end to end on the emulator, debug build (boot it with scripts/emulator.sh)
+scripts/release_smoke.sh                  # the minified release build on the emulator: startup, rescan, SMS burst
 ./gradlew :app:installRelease             # install on the connected phone (USB debugging on)
 ```
 
@@ -129,7 +131,7 @@ system's message store, so it shows up there too.
 | `app/` | Android app (Compose Material 3, Room 3, WorkManager). The model bundle is in `src/main/assets/spam_model/`. |
 | `spamcore/` | Pure Kotlin ML engine: normalizer, tokenizer, features, ONNX encoder, head, on-device trainer, memory, decision rules. Tested on the desktop JVM with the real model. |
 | `ml/` | Python training and export pipeline. `ml/SPEC.md` is the exact Python ↔ Kotlin parity contract. |
-| `scripts/` | `env.sh` and the emulator end-to-end test. |
+| `scripts/` | `env.sh`, the emulator end-to-end test (`e2e.sh`) and the release-build smoke test (`release_smoke.sh`). |
 
 ## Retraining the model
 
