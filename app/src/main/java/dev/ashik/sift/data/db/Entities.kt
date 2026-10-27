@@ -73,7 +73,6 @@ data class ConversationEntity(
     val folder: Int,
     /** Effective label of the latest incoming message (drives the "Possible spam" badge). */
     val latestLabel: Int,
-    val canReply: Boolean,
 )
 
 @Entity(tableName = "contacts_cache")
@@ -83,20 +82,6 @@ data class ContactCacheEntity(
     val photoUri: String?,
     val isContact: Boolean,
     val refreshedAt: Long,
-)
-
-/** Per-part progress of an outgoing message (bitmasks over part indices). */
-@Entity(tableName = "pending_sends")
-data class PendingSendEntity(
-    @PrimaryKey val messageId: Long,
-    val partsTotal: Int,
-    val sentMask: Long = 0,
-    val failedMask: Long = 0,
-    val deliveredMask: Long = 0,
-    val deliveryFailedMask: Long = 0,
-    val lastError: Int = 0,
-    val deliveryReports: Boolean,
-    val createdAt: Long,
 )
 
 @Entity(tableName = "feedback_events", indices = [Index(value = ["batchId"]), Index(value = ["createdAt"])])

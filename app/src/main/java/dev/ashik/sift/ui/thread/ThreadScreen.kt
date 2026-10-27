@@ -3,8 +3,9 @@ package dev.ashik.sift.ui.thread
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,16 +13,18 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.contextmenu.data.TextContextMenuKeys
+import androidx.compose.foundation.text.contextmenu.modifier.filterTextContextMenuComponents
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.rememberSelectionState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Warning
@@ -40,7 +43,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -60,6 +62,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -84,11 +88,8 @@ import dev.ashik.sift.spam.CueCodec
 import dev.ashik.sift.spamcore.Reason
 import dev.ashik.sift.spamcore.SenderKind
 import dev.ashik.sift.spamcore.UserLabel
-import dev.ashik.sift.telephony.SegmentCounter
 import dev.ashik.sift.ui.components.dayHeader
 import dev.ashik.sift.ui.components.displayAddress
-import dev.ashik.sift.ui.components.findLinks
-import dev.ashik.sift.ui.components.messageText
 import dev.ashik.sift.ui.components.rememberGraph
 import dev.ashik.sift.ui.components.sameDay
 import dev.ashik.sift.ui.components.timeOfDay
@@ -105,7 +106,6 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     val vm = viewModel(key = "thread_${key.threadId}_${key.address}") { ThreadViewModel(graph, key) }
     val conversation by vm.conversation.collectAsStateWithLifecycle()
     val messages by vm.messages.collectAsStateWithLifecycle()
-    val draft by vm.draft.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var why by remember { mutableStateOf<ThreadMessageRow?>(null) }
     var menu by remember { mutableStateOf(false) }
@@ -131,9 +131,6 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     LaunchedEffect(messages) { messages?.let(vm::markReadIfNeeded) }
     val resources = LocalResources.current
     LaunchedEffect(vm) {
-        vm.errors.collect { snackbar.showSnackbar(resources.getString(it)) }
-    }
-    LaunchedEffect(vm) {
         vm.feedback.collect { result ->
             if (result.marked == 0) return@collect
             val action = snackbar.showSnackbar(
@@ -149,7 +146,6 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     val title = conversation?.displayName ?: displayAddress(address)
     val inSpam = conv?.folder == Folder.SPAM
     val senderKind = remember(address) { graph.normalizer.normalize(address).kind }
-    val canReply = conv?.canReply ?: (senderKind == SenderKind.PHONE || senderKind == SenderKind.SHORT_CODE)
 
     Scaffold(
         topBar = {
@@ -201,20 +197,20 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
             )
         },
         bottomBar = {
-            when {
-                inSpam -> SpamBanner(onNotSpam = { vm.markConversation(UserLabel.HAM) })
-                !canReply -> Surface(tonalElevation = 2.dp) {
-                    Text(
-                        stringResource(R.string.cant_reply), textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp),
-                    )
-                }
-                else -> Composer(text = draft, onText = { vm.draft.value = it }, onSend = vm::send)
-            }
+            if (inSpam) SpamBanner(onNotSpam = { vm.markConversation(UserLabel.HAM) })
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         val rows = messages.orEmpty()
+        if (messages?.isEmpty() == true) {
+            // Opened from another app's sms: link to someone without a conversation; Sift can't start one.
+            Box(Modifier.fillMaxSize().padding(padding).padding(32.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.thread_empty), style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                )
+            }
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).testTag("message_list"),
             reverseLayout = true,
@@ -225,7 +221,6 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
                 item(key = "m${m.id}") {
                     MessageBubble(
                         m = m,
-                        onRetry = { vm.retry(m.id) },
                         onWhy = { why = m },
                         onMark = { label -> vm.markMessage(m.id, label) },
                         onDelete = { vm.deleteMessage(m.id) },
@@ -282,41 +277,13 @@ private fun SpamBanner(onNotSpam: () -> Unit) {
     }
 }
 
-@Composable
-fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit) {
-    val count = remember(text) { if (text.isEmpty()) null else runCatching { SegmentCounter.count(text) }.getOrNull() }
-    Surface(tonalElevation = 3.dp) {
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = onText,
-                placeholder = { Text(stringResource(R.string.thread_composer_hint)) },
-                maxLines = 6,
-                supportingText = count?.let { c ->
-                    {
-                        Text(
-                            if (c.segments > 1) stringResource(R.string.segments_counter, c.remainingInSegment, c.segments)
-                            else stringResource(R.string.segments_counter_single, c.remainingInSegment),
-                        )
-                    }
-                },
-                modifier = Modifier.weight(1f).testTag("composer"),
-            )
-            IconButton(onClick = onSend, enabled = text.isNotBlank(), modifier = Modifier.testTag("send")) {
-                Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.action_send))
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * One message. Its text is selectable (long-press a word, drag the handles for part of it, or Select all) and never has
+ * links; a tap opens the message's menu (spam marks, details, copying the whole text, delete).
+ */
 @Composable
 fun MessageBubble(
     m: ThreadMessageRow,
-    onRetry: () -> Unit,
     onWhy: () -> Unit,
     onMark: (UserLabel) -> Unit,
     onDelete: () -> Unit,
@@ -328,6 +295,10 @@ fun MessageBubble(
     var confirmDelete by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val selection = rememberSelectionState()
+    // A tap that dismisses a text selection shouldn't also open the menu. The selection is already gone when the click
+    // fires, so note whether there was one when the finger went down (the initial pass reaches this before the text).
+    var tapClearsSelection by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().testTag("message_${m.id}"),
         horizontalAlignment = if (incoming) Alignment.Start else Alignment.End,
@@ -353,12 +324,19 @@ fun MessageBubble(
                 },
                 modifier = Modifier
                     .widthIn(max = 320.dp)
-                    .combinedClickable(onClick = { if (failed) onRetry() }, onLongClick = { menu = true }),
+                    .pointerInput(selection) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            tapClearsSelection = selection.selectedTexts.isNotEmpty()
+                        }
+                    }
+                    .clickable(onClickLabel = stringResource(R.string.action_message_options)) { if (!tapClearsSelection) menu = true },
             ) {
-                Text(
-                    messageText(m.body, linksEnabled = !flagged, linkColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                )
+                // The selection toolbar offers only Copy and Select all: no smart "Open" or "Call" for a link or number in
+                // the text, and no other apps' text actions.
+                SelectionContainer(selection, Modifier.filterTextContextMenuComponents { it.key in COPY_ONLY }) {
+                    Text(m.body, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp).testTag("body_${m.id}"))
+                }
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 if (incoming) {
@@ -380,15 +358,9 @@ fun MessageBubble(
                 DropdownMenuItem(text = { Text(stringResource(R.string.action_delete)) }, onClick = { menu = false; confirmDelete = true })
             }
         }
-        if (flagged && findLinks(m.body).isNotEmpty()) {
-            Text(
-                stringResource(R.string.links_disabled), style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         val status = when {
-            m.type == MsgType.OUTBOX || m.type == MsgType.QUEUED -> stringResource(R.string.status_sending)
-            failed -> stringResource(R.string.status_failed)
+            // Left unsent by another app (Sift never sends), or failed.
+            m.type == MsgType.OUTBOX || m.type == MsgType.QUEUED || failed -> stringResource(R.string.status_not_sent)
             m.type == MsgType.SENT && m.status == MsgStatus.COMPLETE -> stringResource(R.string.status_delivered)
             m.type == MsgType.SENT && m.status == MsgStatus.FAILED -> stringResource(R.string.status_delivery_failed)
             else -> null
@@ -409,6 +381,8 @@ fun MessageBubble(
         )
     }
 }
+
+private val COPY_ONLY = setOf(TextContextMenuKeys.CopyKey, TextContextMenuKeys.SelectAllKey)
 
 fun reasonText(reason: String?): Int = when (runCatching { Reason.valueOf(reason ?: "") }.getOrNull()) {
     Reason.SIMILAR_TO_SPAM -> R.string.reason_SIMILAR_TO_SPAM

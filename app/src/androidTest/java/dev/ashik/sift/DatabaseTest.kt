@@ -19,8 +19,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,7 +67,6 @@ class DatabaseTest {
         assertEquals(MsgType.SENT, c10.latestType)
         assertEquals(1, c10.unreadCount)
         assertEquals(2, c10.messageCount)
-        assertTrue(c10.canReply)
 
         val c20 = db.conversations().get(20)!!
         assertEquals(Folder.SPAM, c20.folder)
@@ -78,7 +75,6 @@ class DatabaseTest {
         val c30 = db.conversations().get(30)!!
         assertEquals(Folder.INBOX, c30.folder)
         assertEquals(LabelCode.SUSPICIOUS, c30.latestLabel)
-        assertFalse(c30.canReply)
 
         // The user's "not spam" wins over the engine and moves the conversation back.
         db.classifications().setUserLabel(4, UserLabel.HAM.ordinal, 3000, LabelCode.HAM, Source.USER)

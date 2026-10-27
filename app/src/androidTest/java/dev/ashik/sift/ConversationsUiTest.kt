@@ -2,6 +2,7 @@ package dev.ashik.sift
 
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -21,6 +22,7 @@ import dev.ashik.sift.ui.conversations.ConversationsContent
 import dev.ashik.sift.ui.theme.SiftTheme
 import dev.ashik.sift.ui.thread.MessageBubble
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,7 +34,7 @@ class ConversationsUiTest {
 
     private fun row(thread: Long, snippet: String, folder: Int = 0, label: Int = LabelCode.HAM, name: String? = null) = ConversationRow(
         ConversationEntity(thread, "+1650555000$thread", "+1650555000$thread", thread, 1_800_000_000_000L - thread, snippet, MsgType.INBOX,
-            thread, 0, 1, folder, label, true),
+            thread, 0, 1, folder, label),
         displayName = name, photoUri = null,
     )
 
@@ -42,7 +44,7 @@ class ConversationsUiTest {
         SiftTheme {
             ConversationsContent(
                 inbox = inbox, spam = spam, scan = null, snackbar = remember { SnackbarHostState() },
-                onOpenThread = {}, onNewMessage = {}, onOpenSettings = {},
+                onOpenThread = {}, onOpenSettings = {},
                 onMark = { ids, label -> marked = ids to label }, onMarkRead = {}, onDelete = {},
             )
         }
@@ -76,16 +78,21 @@ class ConversationsUiTest {
     }
 
     @Test
-    fun flaggedMessageShowsChipAndDisablesLinks() {
+    fun messageTextIsPlainAndTapOpensTheMenu() {
         val m = ThreadMessageRow(
             9, 3, "+16505550003", "+16505550003", "PHONE", "Pay your toll: https://ezpass-tolls.top/pay", 0, 0, MsgType.INBOX, -1, 0,
             true, LabelCode.SPAM, "ENGINE", 0.97f, "MODEL", null, null, null, 1, 0,
         )
         var why = false
-        compose.setContent { SiftTheme { MessageBubble(m, onRetry = {}, onWhy = { why = true }, onMark = {}, onDelete = {}) } }
-        compose.onNodeWithText("Links are turned off in suspected spam.").assertIsDisplayed()
+        compose.setContent { SiftTheme { MessageBubble(m, onWhy = { why = true }, onMark = {}, onDelete = {}) } }
+        // No hyperlinks: the URL is plain text with no link annotation to open.
+        val text = compose.onNodeWithTag("body_9", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.Text].single()
+        assertTrue(text.getLinkAnnotations(0, text.length).isEmpty())
         compose.onNodeWithTag("chip_9").performClick()
         compose.waitForIdle()
         assertEquals(true, why)
+        // The text is selectable, which must not swallow a plain tap: that still opens the message's menu.
+        compose.onNodeWithTag("body_9", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Copy text").assertIsDisplayed()
     }
 }

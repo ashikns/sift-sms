@@ -3,7 +3,6 @@ package dev.ashik.sift
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.ashik.sift.data.db.MsgStatus
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.telephony.SmsProviderGateway
 import org.junit.Assert.assertEquals
@@ -43,19 +42,5 @@ class ProviderGatewayTest {
         assertTrue(gateway.query(id)!!.read)
         assertEquals(1, gateway.deleteMessage(id))
         assertNull(gateway.query(id))
-    }
-
-    @Test
-    fun outgoingLifecycle() {
-        val id = gateway.insertOutgoing("+16505559877", "outgoing test", old, 1, deliveryReports = true)
-        assertEquals(MsgType.OUTBOX, gateway.query(id)!!.type)
-        assertEquals(MsgStatus.PENDING, gateway.query(id)!!.status)
-        gateway.updateType(id, MsgType.SENT)
-        gateway.updateStatus(id, MsgStatus.COMPLETE)
-        val row = gateway.query(id)!!
-        assertEquals(MsgType.SENT, row.type)
-        assertEquals(MsgStatus.COMPLETE, row.status)
-        assertTrue(gateway.keysAfter(id - 1).any { it.id == id && it.body == null })
-        assertEquals(1, gateway.deleteMessage(id))
     }
 }

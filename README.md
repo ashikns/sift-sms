@@ -5,6 +5,9 @@ filters spam with a small transformer model that runs entirely on the phone, and
 mark a message **Spam** or **Not spam**, the model retrains on the device. The app has no INTERNET permission, so
 your messages and what it learns never leave the phone.
 
+Sift only receives: it can't send or reply (it doesn't even hold the SEND_SMS permission). Links in messages are
+plain text, never clickable; long-press a message to select and copy all or part of it.
+
 ## How the spam filter works
 
 1. **Normalize.** Obfuscation tricks are undone before anything else: invisible characters are removed, and

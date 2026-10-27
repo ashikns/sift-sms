@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.map
 data class AppSettings(
     val sensitivity: Sensitivity = Sensitivity.BALANCED,
     val spamNotifications: Boolean = false,
-    val deliveryReports: Boolean = false,
     val initialImportDone: Boolean = false,
 ) {
     val policy: DecisionPolicy get() = DecisionPolicy(sensitivity)
@@ -31,7 +30,6 @@ class SettingsRepository(context: Context) {
         AppSettings(
             sensitivity = p[SENSITIVITY]?.let { runCatching { Sensitivity.valueOf(it) }.getOrNull() } ?: Sensitivity.BALANCED,
             spamNotifications = p[SPAM_NOTIFICATIONS] ?: false,
-            deliveryReports = p[DELIVERY_REPORTS] ?: false,
             initialImportDone = p[INITIAL_IMPORT_DONE] ?: false,
         )
     }
@@ -40,13 +38,11 @@ class SettingsRepository(context: Context) {
 
     suspend fun setSensitivity(value: Sensitivity) = store.edit { it[SENSITIVITY] = value.name }
     suspend fun setSpamNotifications(value: Boolean) = store.edit { it[SPAM_NOTIFICATIONS] = value }
-    suspend fun setDeliveryReports(value: Boolean) = store.edit { it[DELIVERY_REPORTS] = value }
     suspend fun setInitialImportDone(value: Boolean) = store.edit { it[INITIAL_IMPORT_DONE] = value }
 
     private companion object {
         val SENSITIVITY = stringPreferencesKey("sensitivity")
         val SPAM_NOTIFICATIONS = booleanPreferencesKey("spam_notifications")
-        val DELIVERY_REPORTS = booleanPreferencesKey("delivery_reports")
         val INITIAL_IMPORT_DONE = booleanPreferencesKey("initial_import_done")
     }
 }

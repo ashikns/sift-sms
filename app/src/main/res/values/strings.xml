@@ -6,7 +6,6 @@
     <string name="channel_messages_desc">New text messages</string>
     <string name="channel_spam">Filtered spam</string>
     <string name="channel_spam_desc">Silent notices about messages moved to Spam (off unless you turn it on in Settings)</string>
-    <string name="channel_failures">Sending problems</string>
     <string name="channel_mms">Unsupported messages</string>
     <string name="channel_mms_desc">Picture and group messages (MMS) that Sift can\'t receive</string>
     <string name="channel_scan">Rescans</string>
@@ -18,21 +17,17 @@
         <item quantity="one">%d new message</item>
         <item quantity="other">%d new messages</item>
     </plurals>
-    <string name="notification_reply_hint">Reply</string>
-    <string name="action_reply">Reply</string>
     <string name="action_mark_read">Mark as read</string>
     <string name="action_mark_spam">Spam</string>
     <string name="action_not_spam">Not spam</string>
     <string name="notification_spam_title">Filtered as spam</string>
     <string name="notification_spam_text">A message from %1$s was moved to Spam</string>
-    <string name="notification_send_failed_title">Message not sent</string>
-    <string name="notification_send_failed_text">Your message to %1$s wasn\'t sent. Tap to retry.</string>
     <string name="notification_mms_title">Couldn\'t receive a picture or group message</string>
     <string name="notification_mms_text">Sift handles text messages (SMS) only, so a picture, group, or long message (MMS) couldn\'t be received. Ask the sender to text you instead, or switch back to Google Messages for MMS.</string>
 
     <!-- Onboarding -->
     <string name="onboarding_title">Make Sift your SMS app</string>
-    <string name="onboarding_body">Sift filters spam with an AI model that runs entirely on your phone and learns from your feedback. To send and receive texts, it needs to be your default SMS app.</string>
+    <string name="onboarding_body">Sift filters spam with an AI model that runs entirely on your phone and learns from your feedback. To receive texts, it needs to be your default SMS app.</string>
     <string name="onboarding_privacy">Sift has no internet access. Your messages never leave your phone.</string>
     <string name="onboarding_caveat_rcs">Before switching, turn off RCS chats in Google Messages (Settings, then RCS chats) so people\'s messages reach you as regular texts.</string>
     <string name="onboarding_caveat_mms">Sift handles text messages only. Picture and group messages (MMS) aren\'t supported.</string>
@@ -43,7 +38,6 @@
     <!-- Conversations -->
     <string name="tab_inbox">Inbox</string>
     <string name="tab_spam">Spam</string>
-    <string name="new_message">Start chat</string>
     <string name="settings">Settings</string>
     <string name="empty_inbox">No conversations yet</string>
     <string name="empty_spam">No spam. Messages Sift filters out will show up here.</string>
@@ -52,6 +46,8 @@
     <string name="action_delete">Delete</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_stop">Stop</string>
+    <string name="action_message_options">show message options</string>
+    <string name="thread_empty">No messages from this sender. Sift only receives texts, so it can\'t start a conversation.</string>
     <string name="action_undo">Undo</string>
     <string name="action_back">Back</string>
     <string name="action_more">More options</string>
@@ -71,15 +67,10 @@
     <string name="delete_conversations_text">The messages will be deleted from this phone.</string>
 
     <!-- Thread -->
-    <string name="thread_composer_hint">Text message</string>
-    <string name="action_send">Send</string>
-    <string name="status_sending">Sending…</string>
-    <string name="status_failed">Not sent. Tap to retry.</string>
+    <string name="status_not_sent">Not sent</string>
     <string name="status_delivered">Delivered</string>
     <string name="status_delivery_failed">Not delivered</string>
-    <string name="spam_banner">This conversation is in Spam. Replying is turned off.</string>
-    <string name="cant_reply">You can\'t reply to this sender.</string>
-    <string name="links_disabled">Links are turned off in suspected spam.</string>
+    <string name="spam_banner">This conversation is in Spam.</string>
     <string name="chip_spam">Spam</string>
     <string name="chip_possible_spam">Possible spam</string>
     <string name="action_copy">Copy text</string>
@@ -89,10 +80,6 @@
     <string name="action_mark_conversation_spam">Mark as spam</string>
     <string name="action_mark_conversation_not_spam">Not spam</string>
     <string name="delete_message_title">Delete message?</string>
-    <string name="segments_counter">%1$d left · %2$d texts</string>
-    <string name="segments_counter_single">%1$d left</string>
-    <string name="error_role_lost">Sift isn\'t your default SMS app anymore.</string>
-    <string name="error_send">Couldn\'t send the message.</string>
 
     <!-- Why sheet -->
     <string name="why_title_spam">Why this is in Spam</string>
@@ -113,10 +100,6 @@
     <string name="reason_user_ham">You marked this message as not spam.</string>
 
     <!-- New conversation -->
-    <string name="new_conversation_title">New conversation</string>
-    <string name="new_conversation_hint">Name or phone number</string>
-    <string name="send_to_number">Send to %1$s</string>
-    <string name="contacts_permission_missing">Allow contacts access in system settings to search your contacts.</string>
 
     <!-- Settings -->
     <string name="settings_filtering">Spam filtering</string>
@@ -129,9 +112,6 @@
     <string name="sensitivity_aggressive_desc">Catches more spam, but makes more mistakes</string>
     <string name="spam_notifications">Notify me about filtered spam</string>
     <string name="spam_notifications_desc">Silent notifications, so you can double-check</string>
-    <string name="settings_messages">Messages</string>
-    <string name="delivery_reports">Delivery reports</string>
-    <string name="delivery_reports_desc">Ask your carrier to confirm each text was delivered</string>
     <string name="settings_learning">Learning</string>
     <string name="rescan">Rescan messages</string>
     <string name="rescan_desc">Check every message again with the current model and settings</string>

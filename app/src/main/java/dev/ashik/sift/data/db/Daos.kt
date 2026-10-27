@@ -249,13 +249,12 @@ interface ConversationDao {
     companion object {
         private const val PROJECTION_INSERT =
             "INSERT OR REPLACE INTO conversations (threadId, senderKey, address, latestMessageId, latestDate, snippet, " +
-                "latestType, latestIncomingId, unreadCount, messageCount, folder, latestLabel, canReply) "
+                "latestType, latestIncomingId, unreadCount, messageCount, folder, latestLabel) "
         private const val PROJECTION_SELECT =
             "SELECT t.threadId, COALESCE(li.senderKey, lm.senderKey), COALESCE(li.address, lm.address), lm.id, lm.date, " +
                 "lm.body, lm.type, li.id, " +
                 "(SELECT COUNT(*) FROM messages u WHERE u.threadId = t.threadId AND u.type = 1 AND u.read = 0), t.cnt, " +
-                "CASE WHEN COALESCE(cl.effectiveLabel, 0) = 2 THEN 1 ELSE 0 END, COALESCE(cl.effectiveLabel, 0), " +
-                "CASE WHEN COALESCE(li.senderKind, lm.senderKind) IN ('PHONE', 'SHORT_CODE') THEN 1 ELSE 0 END " +
+                "CASE WHEN COALESCE(cl.effectiveLabel, 0) = 2 THEN 1 ELSE 0 END, COALESCE(cl.effectiveLabel, 0) " +
                 "FROM (SELECT threadId, COUNT(*) AS cnt FROM messages"
         private const val PROJECTION_JOINS =
             " JOIN messages lm ON lm.id = (SELECT id FROM messages WHERE threadId = t.threadId ORDER BY date DESC, id DESC LIMIT 1)" +
@@ -272,21 +271,6 @@ interface ContactsCacheDao {
 
     @Query("SELECT * FROM contacts_cache WHERE senderKey = :senderKey")
     suspend fun get(senderKey: String): ContactCacheEntity?
-}
-
-@Dao
-interface PendingSendDao {
-    @Upsert
-    suspend fun upsert(row: PendingSendEntity)
-
-    @Query("SELECT * FROM pending_sends WHERE messageId = :id")
-    suspend fun get(id: Long): PendingSendEntity?
-
-    @Query("DELETE FROM pending_sends WHERE messageId = :id")
-    suspend fun delete(id: Long)
-
-    @Query("SELECT * FROM pending_sends")
-    suspend fun all(): List<PendingSendEntity>
 }
 
 @Dao

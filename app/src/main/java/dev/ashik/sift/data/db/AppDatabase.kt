@@ -16,12 +16,11 @@ import kotlinx.coroutines.Dispatchers
         ClassificationEntity::class,
         ConversationEntity::class,
         ContactCacheEntity::class,
-        PendingSendEntity::class,
         FeedbackEventEntity::class,
         TrainingExampleEntity::class,
         MessageEmbeddingEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,7 +28,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun classifications(): ClassificationDao
     abstract fun conversations(): ConversationDao
     abstract fun contacts(): ContactsCacheDao
-    abstract fun pendingSends(): PendingSendDao
     abstract fun feedback(): FeedbackDao
     abstract fun trainingExamples(): TrainingExampleDao
     abstract fun embeddings(): EmbeddingDao
@@ -60,6 +58,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v4: Sift only receives, so the send queue and the conversations' can-reply flag are gone. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override suspend fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("DROP TABLE IF EXISTS pending_sends")
+                connection.execSQL("ALTER TABLE conversations DROP COLUMN canReply")
+            }
+        }
+
         fun build(context: Context, name: String? = "sift.db"): AppDatabase {
             val builder = if (name == null) {
                 Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
@@ -67,7 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
                 Room.databaseBuilder(context, AppDatabase::class.java, name)
             }
             return builder
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
                 .build()

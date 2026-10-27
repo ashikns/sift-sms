@@ -12,7 +12,6 @@ import android.telephony.PhoneNumberUtils
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
-import androidx.core.app.RemoteInput
 import androidx.core.content.LocusIdCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
@@ -38,9 +37,11 @@ class VisibleThreadTracker {
 object Channels {
     const val MESSAGES = "messages"
     const val SPAM = "spam"
-    const val SEND_FAILURES = "send_failures"
     const val MMS = "mms_unsupported"
     const val SCAN = "scan"
+
+    /** Channels of earlier versions, deleted so they leave the app's notification settings. */
+    val REMOVED = listOf("send_failures")
 }
 
 /** Long-lived conversation shortcuts so message notifications appear in the system's Conversations section. */
@@ -83,13 +84,13 @@ class MessageNotifier(
                         setSound(null, null)
                         enableVibration(false)
                     },
-                NotificationChannel(Channels.SEND_FAILURES, context.getString(R.string.channel_failures), NotificationManager.IMPORTANCE_DEFAULT),
                 NotificationChannel(Channels.MMS, context.getString(R.string.channel_mms), NotificationManager.IMPORTANCE_DEFAULT)
                     .apply { description = context.getString(R.string.channel_mms_desc) },
                 NotificationChannel(Channels.SCAN, context.getString(R.string.channel_scan), NotificationManager.IMPORTANCE_LOW)
                     .apply { description = context.getString(R.string.channel_scan_desc) },
             ),
         )
+        Channels.REMOVED.forEach(nm::deleteNotificationChannel)
     }
 
     /** Posts (or updates) the thread's notification with its unread, non-spam messages. */
@@ -122,7 +123,6 @@ class MessageNotifier(
             .setShowWhen(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
-        if (conv.canReply) builder.addAction(replyAction(threadId))
         builder.addAction(action(threadId, NotificationActionReceiver.ACTION_MARK_READ, R.string.action_mark_read))
         builder.addAction(action(threadId, NotificationActionReceiver.ACTION_MARK_SPAM, R.string.action_mark_spam))
         post(TAG_THREAD, threadId, builder)
@@ -142,16 +142,6 @@ class MessageNotifier(
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .addAction(action(threadId, NotificationActionReceiver.ACTION_NOT_SPAM, R.string.action_not_spam))
         post(TAG_SPAM, threadId, builder)
-    }
-
-    fun notifySendFailed(threadId: Long, address: String) {
-        val builder = NotificationCompat.Builder(context, Channels.SEND_FAILURES)
-            .setSmallIcon(R.drawable.ic_stat_message)
-            .setContentTitle(context.getString(R.string.notification_send_failed_title))
-            .setContentText(context.getString(R.string.notification_send_failed_text, displayAddress(address)))
-            .setContentIntent(openThread(threadId))
-            .setAutoCancel(true)
-        post(TAG_FAILED, threadId, builder)
     }
 
     fun notifyMmsUnsupported() {
@@ -254,30 +244,12 @@ class MessageNotifier(
         return NotificationCompat.Action.Builder(0, context.getString(label), pi).build()
     }
 
-    private fun replyAction(threadId: Long): NotificationCompat.Action {
-        val input = RemoteInput.Builder(NotificationActionReceiver.KEY_REPLY)
-            .setLabel(context.getString(R.string.notification_reply_hint))
-            .build()
-        // Mutable so the system can attach the typed reply; explicit, so that's allowed on Android 14+.
-        val pi = PendingIntent.getBroadcast(
-            context, threadId.toInt(), actionIntent(threadId, NotificationActionReceiver.ACTION_REPLY),
-            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        return NotificationCompat.Action.Builder(R.drawable.ic_stat_message, context.getString(R.string.action_reply), pi)
-            .addRemoteInput(input)
-            .setAllowGeneratedReplies(true)
-            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
-            .setShowsUserInterface(false)
-            .build()
-    }
-
     fun displayAddress(address: String): String =
         PhoneNumberUtils.formatNumber(address, Locale.getDefault().country.ifEmpty { "US" }) ?: address
 
     private companion object {
         const val TAG_THREAD = "thread"
         const val TAG_SPAM = "spam"
-        const val TAG_FAILED = "failed"
         const val TAG_MMS = "mms"
         const val TAG_SCAN_DONE = "scan_done"
     }

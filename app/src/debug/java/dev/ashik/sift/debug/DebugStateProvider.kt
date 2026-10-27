@@ -1,6 +1,7 @@
 package dev.ashik.sift.debug
 
 import android.Manifest
+import android.content.ClipboardManager
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
@@ -32,6 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *     adb shell content call --uri content://dev.ashik.sift.debug --method seedHistory --arg <count>
  *     adb shell content call --uri content://dev.ashik.sift.debug --method seedStats
  *     adb shell content call --uri content://dev.ashik.sift.debug --method rescan
+ *     adb shell content call --uri content://dev.ashik.sift.debug --method clipboard   (while Sift is in the foreground)
  *
  * Guarded by android.permission.DUMP (adb shell holds it; third-party apps can't).
  */
@@ -95,6 +97,9 @@ class DebugStateProvider : ContentProvider() {
                     "seedHistory" -> out.putInt("seeded", seedHistory(arg?.toIntOrNull() ?: 800))
                     "seedStats" -> seedStats(out)
                     "rescan" -> graph.scheduler.enqueueBackfill(rescan = true)
+                    "clipboard" -> out.putString(
+                        "text", context!!.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString(),
+                    )
                     "counts" -> {
                         out.putInt("messages", graph.db.messages().count())
                         out.putInt("provider", graph.gateway.count())

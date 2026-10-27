@@ -6,7 +6,6 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.provider.Telephony.Sms
-import dev.ashik.sift.data.db.MsgStatus
 import dev.ashik.sift.data.db.MsgType
 
 /** Thrown when a provider write is silently rejected: the app is no longer the default SMS app. */
@@ -52,21 +51,6 @@ class SmsProviderGateway(context: Context) {
         return insert(Sms.Inbox.CONTENT_URI, values)
     }
 
-    fun insertOutgoing(address: String, body: String, date: Long, subId: Int, deliveryReports: Boolean): Long {
-        val values = ContentValues().apply {
-            put(Sms.ADDRESS, address)
-            put(Sms.BODY, body)
-            put(Sms.DATE, date)
-            put(Sms.DATE_SENT, date)
-            put(Sms.READ, 1)
-            put(Sms.SEEN, 1)
-            put(Sms.TYPE, MsgType.OUTBOX)
-            put(Sms.STATUS, if (deliveryReports) MsgStatus.PENDING else MsgStatus.NONE)
-            put(Sms.SUBSCRIPTION_ID, subId)
-        }
-        return insert(Sms.Outbox.CONTENT_URI, values)
-    }
-
     private fun insert(uri: Uri, values: ContentValues): Long {
         val result = resolver.insert(uri, values) ?: throw RoleLostException()
         val id = runCatching { ContentUris.parseId(result) }.getOrDefault(0L)
@@ -81,24 +65,6 @@ class SmsProviderGateway(context: Context) {
             "${Sms.TYPE} = ${MsgType.INBOX} AND ${Sms.ADDRESS} = ? AND ${Sms.DATE_SENT} = ? AND ${Sms.BODY} = ?",
             arrayOf(address, dateSent.toString(), body), null,
         )?.use { c -> if (c.moveToFirst()) c.getLong(0) else null }
-
-    fun updateType(id: Long, type: Int, errorCode: Int? = null) {
-        val values = ContentValues().apply {
-            put(Sms.TYPE, type)
-            if (errorCode != null) put(Sms.ERROR_CODE, errorCode)
-        }
-        update(id, values)
-    }
-
-    fun updateStatus(id: Long, status: Int) = update(id, ContentValues().apply { put(Sms.STATUS, status) })
-
-    fun updateDate(id: Long, date: Long) = update(id, ContentValues().apply { put(Sms.DATE, date) })
-
-    private fun update(id: Long, values: ContentValues) {
-        val uri = ContentUris.withAppendedId(Sms.CONTENT_URI, id)
-        val rows = resolver.update(uri, values, null, null)
-        if (rows == 0 && exists(id)) throw RoleLostException()
-    }
 
     fun markThreadRead(threadId: Long): Int {
         val values = ContentValues().apply {

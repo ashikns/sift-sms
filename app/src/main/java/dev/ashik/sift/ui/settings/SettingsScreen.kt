@@ -50,7 +50,6 @@ class SettingsViewModel(private val graph: AppGraph) : ViewModel() {
 
     fun setSensitivity(value: Sensitivity) = viewModelScope.launch { graph.settings.setSensitivity(value) }
     fun setSpamNotifications(value: Boolean) = viewModelScope.launch { graph.settings.setSpamNotifications(value) }
-    fun setDeliveryReports(value: Boolean) = viewModelScope.launch { graph.settings.setDeliveryReports(value) }
     fun rescan() = graph.scheduler.enqueueBackfill(rescan = true)
 }
 
@@ -93,9 +92,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenStats: () -> Unit, onOpenLearning: 
                 )
             }
             SwitchRow(R.string.spam_notifications, R.string.spam_notifications_desc, s.spamNotifications, vm::setSpamNotifications)
-            HorizontalDivider()
-            Header(R.string.settings_messages)
-            SwitchRow(R.string.delivery_reports, R.string.delivery_reports_desc, s.deliveryReports, vm::setDeliveryReports)
             HorizontalDivider()
             Header(R.string.settings_learning)
             ClickRow(R.string.model_stats, R.string.model_stats_desc, onOpenStats)

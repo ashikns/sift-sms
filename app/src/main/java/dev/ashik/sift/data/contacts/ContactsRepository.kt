@@ -63,28 +63,6 @@ class ContactsRepository(
         rows.chunked(500).forEach { db.contacts().upsertAll(it) }
     }
 
-    suspend fun search(query: String, limit: Int = 40): List<ContactPhone> {
-        if (!hasPermission() || query.isBlank()) return emptyList()
-        return withContext(Dispatchers.IO) {
-            val uri = Uri.withAppendedPath(Phone.CONTENT_FILTER_URI, Uri.encode(query.trim()))
-            val out = ArrayList<ContactPhone>()
-            val seen = HashSet<String>()
-            context.contentResolver.query(
-                uri,
-                arrayOf(Phone.DISPLAY_NAME_PRIMARY, Phone.NUMBER, Phone.TYPE, Phone.LABEL, Phone.PHOTO_THUMBNAIL_URI),
-                null, null, "${Phone.DISPLAY_NAME_PRIMARY} ASC",
-            )?.use { c ->
-                while (c.moveToNext() && out.size < limit) {
-                    val number = c.getString(1) ?: continue
-                    if (!seen.add(normalizer.normalize(number).key)) continue
-                    val label = Phone.getTypeLabel(context.resources, c.getInt(2), c.getString(3)).toString()
-                    out += ContactPhone(c.getString(0) ?: number, number, label, c.getString(4))
-                }
-            }
-            out
-        }
-    }
-
     private fun phoneLookup(address: String): ContactPhone? {
         if (address.isBlank()) return null
         val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(address))

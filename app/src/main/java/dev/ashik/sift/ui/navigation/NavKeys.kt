@@ -6,15 +6,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 data object ConversationsKey : NavKey
 
-/**
- * A conversation. [threadId] is the provider thread id, or 0 for a conversation that doesn't exist yet
- * (composing to [address]); the screen resolves it after the first send.
- */
+/** A conversation: [threadId] is the provider thread id, or 0 to find the conversation with [address] (an sms: link). */
 @Serializable
-data class ThreadKey(val threadId: Long, val address: String? = null, val draft: String? = null) : NavKey
-
-@Serializable
-data class NewConversationKey(val body: String? = null) : NavKey
+data class ThreadKey(val threadId: Long, val address: String? = null) : NavKey
 
 @Serializable
 data object SettingsKey : NavKey

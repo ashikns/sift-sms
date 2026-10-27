@@ -25,12 +25,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.ashik.sift.SiftApp
@@ -104,58 +99,4 @@ fun Avatar(name: String, key: String, photoUri: String?, size: Dp = 44.dp) {
             Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
         }
     }
-}
-
-/**
- * Message text with clickable links, unless [linksEnabled] is false (suspected spam), in which case URLs are
- * plain, unclickable text.
- */
-fun messageText(body: String, linksEnabled: Boolean, linkColor: Color): AnnotatedString {
-    if (!linksEnabled) return AnnotatedString(body)
-    val links = findLinks(body)
-    if (links.isEmpty()) return AnnotatedString(body)
-    val style = TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
-    return AnnotatedString.Builder(body).apply {
-        for ((range, url) in links) addLink(LinkAnnotation.Url(url, style), range.first, range.last + 1)
-    }.toAnnotatedString()
-}
-
-/** URL spans (http/https/www, or bare common domains) with the URL to open. */
-fun findLinks(text: String): List<Pair<IntRange, String>> {
-    val out = ArrayList<Pair<IntRange, String>>()
-    var i = 0
-    while (i < text.length) {
-        if (text[i].isWhitespace()) {
-            i++
-            continue
-        }
-        var j = i
-        while (j < text.length && !text[j].isWhitespace()) j++
-        var start = i
-        var end = j
-        while (start < end && text[start] in "([{<\"'") start++
-        while (end > start && text[end - 1] in ".,;:!?)]}>\"'") end--
-        val token = text.substring(start, end)
-        val lower = token.lowercase(Locale.ROOT)
-        val url = when {
-            lower.startsWith("http://") || lower.startsWith("https://") -> token
-            lower.startsWith("www.") && token.length > 4 -> "https://$token"
-            looksLikeDomain(lower) -> "https://$token"
-            else -> null
-        }
-        if (url != null && '.' in token) out += (start until end) to url
-        i = j
-    }
-    return out
-}
-
-private val COMMON_TLDS = setOf(
-    "com", "net", "org", "edu", "gov", "us", "io", "co", "ly", "gl", "me", "info", "biz", "app", "dev", "uk", "ca",
-)
-
-private fun looksLikeDomain(lower: String): Boolean {
-    val host = lower.substringBefore('/')
-    val labels = host.split('.')
-    if (labels.size < 2 || labels.any { it.isEmpty() || it.any { c -> !(c.isLetterOrDigit() || c == '-') } }) return false
-    return labels.last() in COMMON_TLDS && labels.first().any { it.isLetter() }
 }

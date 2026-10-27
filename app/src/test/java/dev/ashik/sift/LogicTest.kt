@@ -1,11 +1,7 @@
 package dev.ashik.sift
 
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.LinkAnnotation
 import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
-import dev.ashik.sift.data.db.MsgStatus
-import dev.ashik.sift.outgoing.PartAggregator
 import dev.ashik.sift.spam.CueCodec
 import dev.ashik.sift.spam.EmbeddingCodec
 import dev.ashik.sift.spam.FolderMoves
@@ -17,33 +13,10 @@ import dev.ashik.sift.spamcore.Reason
 import dev.ashik.sift.spamcore.SpamLabel
 import dev.ashik.sift.spamcore.UserLabel
 import dev.ashik.sift.spamcore.Verdict
-import dev.ashik.sift.ui.components.findLinks
-import dev.ashik.sift.ui.components.messageText
-import dev.ashik.sift.ui.newconversation.looksLikeNumber
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-
-class PartAggregatorTest {
-    @Test
-    fun `all parts must report before a message is final`() {
-        assertEquals(PartAggregator.Outcome.PENDING, PartAggregator.outcome(3, 0b011, 0))
-        assertEquals(PartAggregator.Outcome.SENT, PartAggregator.outcome(3, 0b111, 0))
-        assertEquals(PartAggregator.Outcome.FAILED, PartAggregator.outcome(3, 0b101, 0b010))
-        assertEquals(PartAggregator.Outcome.PENDING, PartAggregator.outcome(3, 0b001, 0b010))
-        assertEquals(PartAggregator.Outcome.SENT, PartAggregator.outcome(1, 1, 0))
-        assertEquals(-1L, PartAggregator.allBits(64))
-    }
-
-    @Test
-    fun `tp status maps to provider delivery status`() {
-        assertEquals(MsgStatus.COMPLETE, PartAggregator.deliveryStatus(0x00))
-        assertEquals(MsgStatus.PENDING, PartAggregator.deliveryStatus(0x21))
-        assertEquals(MsgStatus.FAILED, PartAggregator.deliveryStatus(0x45))
-    }
-}
 
 class FolderAndRescoreTest {
     @Test
@@ -97,42 +70,6 @@ class FolderAndRescoreTest {
         assertEquals(LabelCode.HAM, RescoreService.decide(LabelCode.SPAM, 0.02f, model, Reason.SIMILAR_TO_SPAM.name))
         assertEquals(LabelCode.SUSPICIOUS, RescoreService.decide(LabelCode.SPAM, 0.6f, v(SpamLabel.SUSPICIOUS, Reason.MODEL, 0.6f), Reason.SIMILAR_TO_SPAM.name))
         assertEquals(LabelCode.SPAM, RescoreService.decide(LabelCode.SPAM, 0.02f, v(SpamLabel.SPAM, Reason.SIMILAR_TO_SPAM), Reason.SIMILAR_TO_SPAM.name))
-    }
-}
-
-class UiLogicTest {
-    @Test
-    fun `links are found with surrounding punctuation trimmed`() {
-        val text = "Track it (https://ups.com/t/1Z9), or visit www.usps.com. Call me at 5pm."
-        val links = findLinks(text)
-        assertEquals(listOf("https://ups.com/t/1Z9", "https://www.usps.com"), links.map { it.second })
-        assertEquals("https://ups.com/t/1Z9", text.substring(links[0].first))
-    }
-
-    @Test
-    fun `bare common domains are links but sentence joins are not`() {
-        assertEquals(listOf("https://bit.ly/3xYz"), findLinks("Claim now bit.ly/3xYz").map { it.second })
-        assertTrue(findLinks("See you soon.Love you").isEmpty())
-        assertTrue(findLinks("Version 1.2.3 is out").isEmpty())
-    }
-
-    @Test
-    fun `suspected spam gets no clickable links`() {
-        val body = "Your toll is unpaid: https://ezpass-tolls.top/pay"
-        val on = messageText(body, linksEnabled = true, linkColor = Color.Blue)
-        val off = messageText(body, linksEnabled = false, linkColor = Color.Blue)
-        assertEquals(1, on.getLinkAnnotations(0, body.length).size)
-        assertTrue(on.getLinkAnnotations(0, body.length).single().item is LinkAnnotation.Url)
-        assertTrue(off.getLinkAnnotations(0, body.length).isEmpty())
-        assertEquals(body, off.text)
-    }
-
-    @Test
-    fun `recipient field recognizes numbers`() {
-        assertTrue(looksLikeNumber("(650) 555-0001"))
-        assertTrue(looksLikeNumber("+44 7700 900123"))
-        assertFalse(looksLikeNumber("Alice"))
-        assertFalse(looksLikeNumber("12"))
     }
 }
 

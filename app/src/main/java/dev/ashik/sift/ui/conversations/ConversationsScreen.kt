@@ -21,14 +21,12 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -78,7 +76,7 @@ import dev.ashik.sift.ui.components.rememberGraph
 import dev.ashik.sift.ui.components.shortTime
 
 @Composable
-fun ConversationsScreen(onOpenThread: (Long) -> Unit, onNewMessage: () -> Unit, onOpenSettings: () -> Unit) {
+fun ConversationsScreen(onOpenThread: (Long) -> Unit, onOpenSettings: () -> Unit) {
     val graph = rememberGraph()
     val context = LocalContext.current
     val vm = viewModel { ConversationsViewModel(graph, context.applicationContext) }
@@ -97,7 +95,7 @@ fun ConversationsScreen(onOpenThread: (Long) -> Unit, onNewMessage: () -> Unit, 
     }
     ConversationsContent(
         inbox = inbox, spam = spam, scan = scan, snackbar = snackbar,
-        onOpenThread = onOpenThread, onNewMessage = onNewMessage, onOpenSettings = onOpenSettings,
+        onOpenThread = onOpenThread, onOpenSettings = onOpenSettings,
         onMark = { ids, label -> vm.mark(ids, label) }, onMarkRead = { vm.markRead(it) }, onDelete = { vm.delete(it) },
     )
 }
@@ -119,7 +117,6 @@ fun ConversationsContent(
     scan: ScanProgress?,
     snackbar: SnackbarHostState,
     onOpenThread: (Long) -> Unit,
-    onNewMessage: () -> Unit,
     onOpenSettings: () -> Unit,
     onMark: (Set<Long>, UserLabel) -> Unit,
     onMarkRead: (Set<Long>) -> Unit,
@@ -173,15 +170,6 @@ fun ConversationsContent(
                         }
                         IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, stringResource(R.string.action_delete)) }
                     },
-                )
-            }
-        },
-        floatingActionButton = {
-            if (selection.isEmpty() && !inSpam) {
-                ExtendedFloatingActionButton(
-                    onClick = onNewMessage,
-                    icon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                    text = { Text(stringResource(R.string.new_message)) },
                 )
             }
         },

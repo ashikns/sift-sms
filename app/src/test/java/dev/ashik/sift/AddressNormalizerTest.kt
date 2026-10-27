@@ -30,7 +30,6 @@ class AddressNormalizerTest {
         assertEquals(SenderKind.PHONE, a.kind)
         assertTrue(a.nanp)
         assertFalse(a.international)
-        assertTrue(a.canReply)
     }
 
     @Test
@@ -38,7 +37,6 @@ class AddressNormalizerTest {
         val s = classify("72975")
         assertEquals(SenderKind.SHORT_CODE, s.kind)
         assertEquals("72975", s.key)
-        assertTrue(s.canReply)
     }
 
     @Test
@@ -46,11 +44,9 @@ class AddressNormalizerTest {
         val alpha = classify("  Amazon  Alerts ")
         assertEquals(SenderKind.ALPHANUMERIC, alpha.kind)
         assertEquals("AMAZON ALERTS", alpha.key)
-        assertFalse(alpha.canReply)
         val email = classify("Bob@Example.COM")
         assertEquals(SenderKind.EMAIL, email.kind)
         assertEquals("bob@example.com", email.key)
-        assertFalse(email.canReply)
     }
 
     @Test

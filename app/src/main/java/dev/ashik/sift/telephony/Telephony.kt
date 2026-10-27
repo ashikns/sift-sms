@@ -7,7 +7,6 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Telephony
-import android.telephony.SmsMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -28,16 +27,6 @@ class DefaultSmsRole(context: Context) {
     fun refresh(): Boolean = isHeldNow().also { _held.value = it }
 
     fun requestIntent(): Intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
-}
-
-/** GSM-7 / UCS-2 segment math for the composer. */
-object SegmentCounter {
-    data class Count(val segments: Int, val remainingInSegment: Int, val unicode: Boolean)
-
-    fun count(text: String): Count {
-        val r = SmsMessage.calculateLength(text, false)
-        return Count(segments = r[0], remainingInSegment = r[2], unicode = r[3] == SmsMessage.ENCODING_16BIT)
-    }
 }
 
 /**

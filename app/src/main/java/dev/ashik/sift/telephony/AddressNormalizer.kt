@@ -18,7 +18,6 @@ data class SenderKey(
     /** The number's country calling code differs from the SIM's. */
     val international: Boolean,
 ) {
-    val canReply: Boolean get() = kind == SenderKind.PHONE || kind == SenderKind.SHORT_CODE
 }
 
 class AddressNormalizer(private val countryIso: () -> String) {

@@ -12,9 +12,6 @@ import dev.ashik.sift.incoming.IncomingSmsHandler
 import dev.ashik.sift.notifications.ConversationShortcuts
 import dev.ashik.sift.notifications.MessageNotifier
 import dev.ashik.sift.notifications.VisibleThreadTracker
-import dev.ashik.sift.outgoing.OutboxRecovery
-import dev.ashik.sift.outgoing.SendResultProcessor
-import dev.ashik.sift.outgoing.SmsSender
 import dev.ashik.sift.spam.ClassificationCoordinator
 import dev.ashik.sift.spam.FeedbackService
 import dev.ashik.sift.spam.LatencyStats
@@ -64,9 +61,6 @@ class AppGraph(private val context: Context) {
     val feedback by lazy { FeedbackService(db, engine, rescore, projector, notifier, normalizer, appScope) }
     val scheduler by lazy { WorkScheduler(context) }
     val sync by lazy { SyncEngine(db, gateway, repository, projector, role, scheduler, contacts) }
-    val sendResults by lazy { SendResultProcessor(db, gateway, repository, notifier) }
-    val sender by lazy { SmsSender(context, gateway, repository, db, settings, sendResults) }
-    val outboxRecovery by lazy { OutboxRecovery(db, sendResults) }
     val incoming by lazy {
         IncomingSmsHandler(db, gateway, repository, coordinator, notifier, settings, visibleThread, scheduler, appScope)
     }
@@ -77,7 +71,7 @@ class AppGraph(private val context: Context) {
 
     /**
      * Once per process, when the UI starts with the role held: import history on first run, otherwise a full
-     * reconcile, plus recovery of interrupted sends and classifications. Never run from a receiver-started process.
+     * reconcile, plus recovery of interrupted classifications. Never run from a receiver-started process.
      */
     suspend fun onUiStart() = startupMutex.withLock {
         if (!role.refresh()) return@withLock
@@ -93,7 +87,6 @@ class AppGraph(private val context: Context) {
             sync.fullReconcile()
             contacts.refreshAll()
         }
-        outboxRecovery.run()
         if (db.classifications().pendingCount() > 0) scheduler.enqueueClassifyPending()
     }
 }

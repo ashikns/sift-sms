@@ -10,14 +10,13 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation3.runtime.NavKey
 import dev.ashik.sift.SiftApp
-import dev.ashik.sift.ui.navigation.NewConversationKey
 import dev.ashik.sift.ui.navigation.ThreadKey
 import dev.ashik.sift.ui.theme.SiftTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    /** A destination requested by the launching intent (notification, share, sms: link), consumed by the UI. */
+    /** A destination requested by the launching intent (notification, sms: link), consumed by the UI. */
     private val pendingDestination = MutableStateFlow<NavKey?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,14 +48,12 @@ class MainActivity : ComponentActivity() {
         return when {
             data?.scheme == "sift" && data.host == "thread" ->
                 data.lastPathSegment?.toLongOrNull()?.let { ThreadKey(it) }
+            // Another app asking to text someone: Sift doesn't send, so this opens the conversation with them.
             (intent.action == Intent.ACTION_SENDTO || intent.action == Intent.ACTION_VIEW) &&
                 data?.scheme in setOf("sms", "smsto", "mms", "mmsto") -> {
                 val address = data?.schemeSpecificPart?.substringBefore('?')?.split(',', ';')?.firstOrNull()?.trim()
-                val body = intent.getStringExtra("sms_body") ?: intent.getStringExtra(Intent.EXTRA_TEXT)
-                if (address.isNullOrEmpty()) NewConversationKey(body) else ThreadKey(0, address, body)
+                if (address.isNullOrEmpty()) null else ThreadKey(0, address)
             }
-            intent.action == Intent.ACTION_SEND && intent.type == "text/plain" ->
-                NewConversationKey(intent.getStringExtra(Intent.EXTRA_TEXT))
             else -> null
         }
     }
