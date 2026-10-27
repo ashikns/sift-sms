@@ -75,7 +75,7 @@ class RescoreService(
             val previous = computed.previous
             if (previous?.userLabel != null) continue
             val oldEffective = previous?.effectiveLabel ?: LabelCode.HAM
-            val newEffective = decide(oldEffective, previous?.modelScore, computed.verdict)
+            val newEffective = decide(oldEffective, previous?.modelScore, computed.verdict, previous?.reason)
             val entity = coordinator.entityFor(computed, newEffective)
             if (previous == null || entity.effectiveLabel != previous.effectiveLabel || entity.reason != previous.reason ||
                 entity.modelScore != previous.modelScore || previous.state != ClassState.DONE
@@ -111,15 +111,20 @@ class RescoreService(
         const val WINDOW_MS = 30L * 24 * 60 * 60 * 1000
         const val HYSTERESIS = 0.05f
 
-        /** The new effective label for an unlabeled message given its old one and a fresh verdict. */
-        fun decide(oldEffective: Int, oldScore: Float?, v: Verdict): Int {
+        /**
+         * The new effective label for an unlabeled message given its old one and a fresh verdict. A Spam verdict that
+         * came from a near-duplicate match ([oldReason] SIMILAR_TO_SPAM) has lost its basis when the fresh verdict is
+         * the model's (the learning entry was deleted), so the model's label applies without the hysteresis margin.
+         */
+        fun decide(oldEffective: Int, oldScore: Float?, v: Verdict, oldReason: String? = null): Int {
             val newLabel = LabelCode.of(v.label)
             return when (v.reason) {
                 Reason.SIMILAR_TO_SPAM, Reason.SIMILAR_TO_HAM -> newLabel
                 Reason.UNAVAILABLE -> oldEffective
                 Reason.MODEL, Reason.MODEL_FALLBACK, Reason.OTP_GUARDRAIL -> when {
                     oldEffective == LabelCode.SPAM && newLabel != LabelCode.SPAM -> {
-                        val clear = oldScore == null || v.probability.isNaN() || oldScore - v.probability >= HYSTERESIS
+                        val clear = oldReason == Reason.SIMILAR_TO_SPAM.name || oldScore == null || v.probability.isNaN() ||
+                            oldScore - v.probability >= HYSTERESIS
                         if (clear) newLabel else LabelCode.SPAM
                     }
                     oldEffective != LabelCode.SPAM && newLabel == LabelCode.SPAM -> LabelCode.SUSPICIOUS
@@ -211,6 +216,16 @@ class FeedbackService(
                 byId[e.messageId]?.let { example(it, UserLabelCode.toUserLabel(e.prevUserLabel!!), now) }
             })
         }
+        scheduleRetrainRescore()
+    }
+
+    /**
+     * Deletes learning entries. The engine forgets them (its near-duplicate memory at once) and retrains, then recent
+     * messages are re-scored, as after an Undo. The messages keep the user's labels: only the learning goes.
+     */
+    suspend fun forgetLearned(messageIds: Collection<Long>) {
+        if (messageIds.isEmpty()) return
+        engine.forget(messageIds)
         scheduleRetrainRescore()
     }
 

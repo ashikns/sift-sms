@@ -327,6 +327,13 @@ interface TrainingExampleDao {
 
     @Query("SELECT * FROM training_examples WHERE messageId = :id")
     suspend fun get(id: Long): TrainingExampleEntity?
+
+    @Query(
+        "SELECT t.messageId, t.body, t.label, t.createdAt, COALESCE(m.address, t.senderKey) AS address, cc.displayName AS displayName " +
+            "FROM training_examples t LEFT JOIN messages m ON m.id = t.messageId " +
+            "LEFT JOIN contacts_cache cc ON cc.senderKey = t.senderKey ORDER BY t.createdAt DESC, t.messageId DESC",
+    )
+    fun observeEntries(): Flow<List<LearningEntryRow>>
 }
 
 @Dao

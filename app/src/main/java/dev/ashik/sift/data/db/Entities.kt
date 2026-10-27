@@ -187,4 +187,15 @@ data class FolderCount(val folder: Int, val conversations: Int, val unread: Int)
 
 data class ThreadFolder(val threadId: Long, val folder: Int)
 
+/** A learning entry as the review screen lists it: no embedding, plus the sender's contact name if any. */
+data class LearningEntryRow(
+    val messageId: Long,
+    val body: String,
+    val label: Int,
+    val createdAt: Long,
+    /** The message's address while it's still stored (formatted like the rest of the app), else the sender key. */
+    val address: String,
+    val displayName: String?,
+)
+
 data class WeekCount(val week: Long, val count: Int)

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end checks on the emulator: real SMS delivery (adb emu sms send), spam placement, notifications,
-# multipart, learning from feedback, Undo, a rescan of all history, role loss + reconcile, Doze. Emulator only.
+# multipart, learning from feedback, Undo, the learning entries page, a rescan of all history, role loss + reconcile,
+# Doze. Emulator only.
 #
 #   scripts/emulator.sh          # boot the AVD (once)
 #   scripts/e2e.sh               # build + install the debug app, run every scenario
@@ -50,6 +51,31 @@ wait_until() {
 }
 folder_is() { [[ "$(conv_field "$1" folder)" == "$2" ]]; }
 has_message() { local m; m=$(messages); [[ "$m" == *"$1"* ]]; }
+engine_field() { $A shell content query --uri "$DBG/engine" 2>/dev/null | tr -d '\r' | field "$1"; }
+
+# Screen automation: dump the UI with uiautomator, then find nodes by text or content description.
+ui_dump() { $A shell uiautomator dump /sdcard/sift-e2e-ui.xml >/dev/null 2>&1; $A shell cat /sdcard/sift-e2e-ui.xml >"$OUT/ui.xml"; }
+# ui_find <label> [<anchor>]: center of the node whose text or content-desc is <label>; with <anchor>, the one
+# vertically nearest the node containing <anchor> (e.g. the delete button in that list row).
+ui_find() {
+  python3 -I - "$OUT/ui.xml" "$1" "${2:-}" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+nodes = list(ET.parse(sys.argv[1]).getroot().iter("node"))
+label = lambda n: (n.get("text") or "") + "\n" + (n.get("content-desc") or "")
+def center(n):
+    x1, y1, x2, y2 = map(int, re.findall(r"\d+", n.get("bounds")))
+    return (x1 + x2) // 2, (y1 + y2) // 2
+targets = [n for n in nodes if sys.argv[2] in (n.get("text"), n.get("content-desc"))]
+if sys.argv[3]:
+    anchor = next((n for n in nodes if sys.argv[3] in label(n)), None)
+    if anchor is None: sys.exit(1)
+    targets.sort(key=lambda n: abs(center(n)[1] - center(anchor)[1]))
+if not targets: sys.exit(1)
+print(*center(targets[0]))
+PY
+}
+ui_tap() { local xy; ui_dump; xy=$(ui_find "$@") || return 1; $A shell input tap $xy; }
+ui_has() { ui_dump; python3 -I -c 'import sys, xml.etree.ElementTree as ET; sys.exit(not any(sys.argv[2] in (n.get("text") or "") + (n.get("content-desc") or "") for n in ET.parse(sys.argv[1]).getroot().iter("node")))' "$OUT/ui.xml" "$1"; }
 
 step "Setup ($SERIAL, run $RUN)"
 if [[ -z "${SKIP_INSTALL:-}" ]]; then
@@ -118,6 +144,31 @@ BATCH=$(call markSpam "thread:$T1" | grep -oE 'batchId=[0-9]+' | cut -d= -f2)
 folder_is "$(num 1)" 1 && pass "mark spam" || fail "mark spam folder=$(conv_field "$(num 1)" folder)"
 call undo "$BATCH" >/dev/null
 folder_is "$(num 1)" 0 && pass "undo restores Inbox" || fail "after undo folder=$(conv_field "$(num 1)" folder)"
+
+step "Learning entries"
+# Deleting an entry only takes effect, with one retrain, once the page is left.
+idle
+EX0=$(engine_field examples)
+V0=$(engine_field modelVersion)
+$A shell am start -W -f 0x10008000 -n "$PKG/.ui.MainActivity" >/dev/null # new, cleared task: start at the Inbox
+sleep 1
+ui_tap "Settings" && sleep 1 && ui_tap "Learning entries" && sleep 1
+ui_has "$FAM_A" && pass "Settings → Learning entries lists the marks ($EX0)" || fail "the marked scam isn't listed"
+ui_tap "Delete entry" "$FAM_A" && sleep 1
+ui_has "$FAM_A" && fail "deleted entry still listed" || pass "deleted entry leaves the list"
+sleep 4 # longer than the retrain debounce
+[[ "$(engine_field examples)" == "$EX0" && "$(engine_field modelVersion)" == "$V0" ]] \
+  && pass "nothing forgotten or retrained while the page is open" \
+  || fail "engine changed while on the page: examples=$(engine_field examples) version=$(engine_field modelVersion)"
+$A shell input keyevent KEYCODE_BACK
+retrained() { [[ "$(engine_field examples)" == "$((EX0 - 1))" && "$(engine_field modelVersion)" == "$((V0 + 1))" ]]; }
+wait_until 20 retrained && pass "leaving the page forgets the entry and retrains once" \
+  || fail "after leaving: examples=$(engine_field examples) version=$(engine_field modelVersion) (was $EX0, $V0)"
+wait_until 20 folder_is "$(num 5)" 0 && pass "the near-duplicate it had pulled into Spam returns to Inbox" \
+  || fail "near-duplicate folder=$(conv_field "$(num 5)" folder) reason=$(msg_field "$(num 5)" reason)"
+folder_is "$(num 4)" 1 && pass "the marked message keeps its Spam label" || fail "marked message folder=$(conv_field "$(num 4)" folder)"
+$A shell input keyevent KEYCODE_BACK
+$A shell input keyevent KEYCODE_HOME
 
 step "Rescan all history"
 # History older than the automatic backfill's 90 days: only a rescan classifies it.

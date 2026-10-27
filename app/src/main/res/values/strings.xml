@@ -152,12 +152,22 @@
         <item quantity="other">%1$,d conversations moved to Inbox.</item>
     </plurals>
     <string name="scan_done_unchanged">No conversations changed folders.</string>
-    <string name="reset_learning">Reset learning</string>
-    <string name="reset_learning_desc">Forget everything Sift learned from your marks</string>
-    <string name="reset_title">Reset learning?</string>
-    <string name="reset_text">Sift will forget what it learned from your spam and not-spam marks. Messages you marked stay where they are.</string>
-    <string name="reset_confirm">Reset</string>
-    <string name="reset_done">Sift is back to its original model.</string>
+    <string name="learning_entries">Learning entries</string>
+    <string name="learning_entries_desc">See and delete what Sift learned from your marks</string>
+    <string name="learning_intro">Sift learns from each message you mark as spam or not spam. Delete an entry to stop it learning from that message; the message keeps your label. Sift retrains when you leave this page.</string>
+    <plurals name="learning_count">
+        <item quantity="one">%1$,d entry: %2$,d spam, %3$,d not spam</item>
+        <item quantity="other">%1$,d entries: %2$,d spam, %3$,d not spam</item>
+    </plurals>
+    <string name="learning_empty">No entries yet. Each message you mark as spam or not spam shows up here.</string>
+    <string name="learning_spam">Spam</string>
+    <string name="learning_not_spam">Not spam</string>
+    <string name="learning_delete">Delete entry</string>
+    <string name="learning_deleted">Entry deleted</string>
+    <string name="learning_delete_all">Delete all</string>
+    <string name="learning_delete_all_title">Delete all entries?</string>
+    <string name="learning_delete_all_text">When you leave this page, Sift forgets everything it learned from your marks and goes back to its original model. Messages you marked keep their labels.</string>
+    <string name="learning_deleted_all">All entries deleted</string>
     <string name="model_stats">Model stats</string>
     <string name="model_stats_desc">How Sift\'s spam model is doing</string>
     <string name="settings_about">About</string>

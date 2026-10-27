@@ -20,7 +20,9 @@ import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
 import dev.ashik.sift.ui.components.rememberGraph
 import dev.ashik.sift.ui.conversations.ConversationsScreen
+import dev.ashik.sift.ui.learning.LearningScreen
 import dev.ashik.sift.ui.navigation.ConversationsKey
+import dev.ashik.sift.ui.navigation.LearningKey
 import dev.ashik.sift.ui.navigation.ModelStatsKey
 import dev.ashik.sift.ui.navigation.NewConversationKey
 import dev.ashik.sift.ui.navigation.SettingsKey
@@ -84,10 +86,14 @@ fun SiftRoot(pendingDestination: StateFlow<NavKey?>, onDestinationConsumed: () -
                 SettingsScreen(
                     onBack = { backStack.removeAt(backStack.lastIndex) },
                     onOpenStats = { backStack.add(ModelStatsKey) },
+                    onOpenLearning = { backStack.add(LearningKey) },
                 )
             }
             entry<ModelStatsKey> {
                 ModelStatsScreen(onBack = { backStack.removeAt(backStack.lastIndex) })
+            }
+            entry<LearningKey> {
+                LearningScreen(onBack = { backStack.removeAt(backStack.lastIndex) })
             }
         },
     )

@@ -21,3 +21,6 @@ data object SettingsKey : NavKey
 
 @Serializable
 data object ModelStatsKey : NavKey
+
+@Serializable
+data object LearningKey : NavKey

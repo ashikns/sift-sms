@@ -5,12 +5,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.ashik.sift.data.db.AppDatabase
 import dev.ashik.sift.data.db.ClassState
 import dev.ashik.sift.data.db.ClassificationEntity
+import dev.ashik.sift.data.db.ContactCacheEntity
 import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MessageEntity
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.Source
 import dev.ashik.sift.data.db.ThreadFolder
+import dev.ashik.sift.data.db.TrainingExampleEntity
 import dev.ashik.sift.data.repo.ConversationProjector
 import dev.ashik.sift.spamcore.UserLabel
 import kotlinx.coroutines.flow.first
@@ -124,6 +126,23 @@ class DatabaseTest {
         assertEquals(listOf(3L, 2L, 1L), db.messages().rescanRemainingIds(startedAt = 1000))
         projector.rebuildAll()
         assertEquals(listOf(ThreadFolder(10, Folder.SPAM)), db.conversations().folders())
+    }
+
+    @Test
+    fun learningEntriesNewestFirstWithContactNames() = runBlocking {
+        db.trainingExamples().upsertAll(
+            listOf(
+                TrainingExampleEntity(1, "Claim your gift card", "+16505550001", "PHONE", false, true, UserLabel.SPAM.ordinal, 1000, null),
+                TrainingExampleEntity(2, "Your code is 123456", "BANK", "ALPHANUMERIC", false, false, UserLabel.HAM.ordinal, 2000, ByteArray(1536)),
+            ),
+        )
+        db.contacts().upsertAll(listOf(ContactCacheEntity("+16505550001", "Alex", null, true, 0)))
+        db.messages().upsertAll(listOf(msg(1, 10, MsgType.INBOX, 1000, sender = "6505550001")))
+        val rows = db.trainingExamples().observeEntries().first()
+        assertEquals(listOf(2L, 1L), rows.map { it.messageId })
+        assertEquals(listOf(null, "Alex"), rows.map { it.displayName })
+        assertEquals(listOf(UserLabel.HAM.ordinal, UserLabel.SPAM.ordinal), rows.map { it.label })
+        assertEquals(listOf("BANK", "6505550001"), rows.map { it.address }) // the message's own address while it exists
     }
 
     @Test

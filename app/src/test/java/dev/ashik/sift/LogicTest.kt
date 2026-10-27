@@ -89,6 +89,15 @@ class FolderAndRescoreTest {
         assertEquals(LabelCode.HAM, RescoreService.decide(LabelCode.SPAM, null, v(SpamLabel.HAM, Reason.MODEL, 0.1f)))
         assertEquals(LabelCode.SPAM, RescoreService.decide(LabelCode.SPAM, 0.9f, v(SpamLabel.HAM, Reason.UNAVAILABLE)))
     }
+
+    @Test
+    fun `spam from a near-duplicate match is withdrawn once the match is gone`() {
+        val model = v(SpamLabel.HAM, Reason.MODEL, 0.02f)
+        assertEquals(LabelCode.SPAM, RescoreService.decide(LabelCode.SPAM, 0.02f, model))
+        assertEquals(LabelCode.HAM, RescoreService.decide(LabelCode.SPAM, 0.02f, model, Reason.SIMILAR_TO_SPAM.name))
+        assertEquals(LabelCode.SUSPICIOUS, RescoreService.decide(LabelCode.SPAM, 0.6f, v(SpamLabel.SUSPICIOUS, Reason.MODEL, 0.6f), Reason.SIMILAR_TO_SPAM.name))
+        assertEquals(LabelCode.SPAM, RescoreService.decide(LabelCode.SPAM, 0.02f, v(SpamLabel.SPAM, Reason.SIMILAR_TO_SPAM), Reason.SIMILAR_TO_SPAM.name))
+    }
 }
 
 class UiLogicTest {
