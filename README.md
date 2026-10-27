@@ -19,11 +19,11 @@ plain text, never clickable; long-press a message to select and copy all or part
    to a shortener, a risky domain ending, a brand look-alike or the brand's official site; phone numbers, money
    amounts, "reply STOP", OTP codes, capital letters, sender type…). Carrier-vetted short codes count as strong
    evidence of a legitimate sender, and international numbers count against.
+   It also weighs the sender paired with each of the message's words and link domains, so a sender counts only together with what its message says: a bank's card-alert wording can read as legitimate from that bank while the bank's upsells and other senders' look-alikes don't. Every route of an Indian business sender is one sender (`AX-ICICIT-S`, `JD-ICICIT-T` → `ICICIT`), and its category suffix is ignored.
 4. **Decide**, always per message and from that message's own content. Nothing is decided per sender: the same
    sender can send a promo you call spam and a passcode you need, and even a contact's message is judged on what it
    says. In order:
-   1. a message nearly identical to one you've labeled gets your label ("not spam" matches also need the same
-      sender, or no link domains the labeled message didn't have);
+   1. a message nearly identical to one you've labeled gets your label ("not spam" matches also need the same sender, on any of its routes, or no link domains the labeled message didn't have);
    2. otherwise the model decides, at the sensitivity you chose (Conservative / Balanced / Aggressive).
 
    There are three outcomes: **Not spam**, **Possible spam** (stays in the inbox with a badge), and **Spam** (moved
@@ -33,66 +33,71 @@ plain text, never clickable; long-press a message to select and copy all or part
    A mark applies to that one message. Each mark is stored on the phone as a training example (the text, its
    features and your label), so learning survives deleting the message.
    - Near-duplicates of the marked message follow your label immediately.
-   - A few seconds later the model's word and character n-gram weights retrain lightly on all your marks, anchored
-     to the base model. Only messages that share the marked messages' wording are affected.
+   - A few seconds later the model retrains on all your marks, anchored to the base model: lightly for word and
+     character n-grams, strongly for each marked message's sender paired with its words and link domains. A sender
+     only ever counts together with a message's wording, so "Not spam" on a bank's card alerts clears that bank's
+     other card alerts (under any route prefix: `AX-ICICIT-S` and `JD-ICICIT-T` are one sender), not its upsells or
+     another sender's similar text.
+   - Then every message is re-checked with the new model, old ones included; the progress shows in the notification
+     shade.
    - The embedding weights, message-feature weights and sender-type signals stay fixed. That way a mark on one
      short-code promo doesn't shift every short-code message.
    - After an app update ships a new model, your marks are re-applied to it automatically.
 
 ## How well it works
 
-Measured on held-out data the model never trained on (`ml/scripts/s09_evaluate.py`). False-positive rate (FPR) means
+Measured on data the model never trained on (`ml/scripts/s09_evaluate.py`). False-positive rate (FPR) means
 legitimate messages wrongly moved to Spam.
+
+**Your own inbox.** The oldest half (2,337 messages, May 2025 – Feb 2026) trained the model; the newest half
+(2,337 messages, Feb – Oct 2026: 2,116 legit, 221 spam) is held out:
+
+| Setting | Spam caught | FPR |
+|---|---|---|
+| Conservative | 35% | 0.09% |
+| **Balanced (default)** | **50%** | **0.80%** |
+| Aggressive | 87% | 2.6% |
+
+That's before any marks. Replayed in arrival order through the phone's engine from a fresh install, by a user who
+corrects every mistake, the held-out half takes 57 marks in 8½ months: 9 legitimate messages put in Spam and 48
+promotions left in the inbox the first time a template appears. Errors in the later half drop from 87 without
+learning to 34.
+
+**Public data** (test split: 1,387 legit / 3,809 spam from UCI, Mishra, NCSU, IMC'25, the templates and Indian
+datasets):
 
 | Data | Setting | Spam caught | FPR |
 |---|---|---|---|
-| Public-dataset test split (3,535 spam / 968 legit) | Conservative | 92.0% | 0.10% |
-| | **Balanced (default)** | **95.4%** | **1.34%** |
-| | Aggressive | 96.2% | 1.96% |
-| Scam campaigns that first appeared after the training cutoff | Balanced | 94.9% | — |
-| 200 hand-written modern US messages | Conservative | 78% | 0% |
-| | **Balanced** | **89%** | **3%** |
-| Same set, transactional legit only (no personal chat or first contacts): 100 spam / 76 legit | **Balanced** | **89%** | **1.3%** (1 of 76) |
+| Test split | Conservative | 69.9% | 0% |
+| | **Balanced** | **84.9%** | **0.07%** |
+| | Aggressive | 94.9% | 1.87% |
+| Scam campaigns that first appeared after the training cutoff | Balanced | 82% | — |
+| 200 hand-written modern US messages | **Balanced** | **79%** | **0%** |
+
+Balanced is calibrated for 0.5% FPR on validation messages that include your own, and your hardest legitimate
+notices (dealer service reminders, invoices, insurance) push it up: on public data it lands far under that budget,
+with lower recall. At exactly 0.5% FPR the test split's recall is 92.8% (new campaigns 93%, the modern set 88%).
+The Indian SMS corpus with model-assisted labels (`cube_sms77k`) trains but stays out of thresholds and gates;
+Balanced catches 81% of its spam at 0.09% FPR.
 
 - No one-time-passcode (OTP) message was ever filtered.
 - Undoing obfuscation (invisible characters, look-alike letters, fullwidth and "math" letters) gives identical model
-  input, 100% of the time.
-- Visible tricks (spaced letters, leetspeak, typos) cost only 1.3 points of recall.
+  input, 100% of the time. Visible tricks (spaced letters, leetspeak, typos) cost 2.5 points of recall.
 
-Two of the 13 acceptance gates are not met:
-- **Test-split FPR (target ≤ 0.5%).** 10 of the 13 false positives are one template family: legitimate recruiter
-  follow-ups ("Hi Jose, this is Sophia from Acme Corp HR…"), which read like job scams. Excluding that family, the FPR
-  is 0.31%.
-- **Modern-set FPR (target ≤ 2%).** The 3 misses are a card-payment receipt, a Facebook Marketplace inquiry and a
-  doctor's-office reschedule. On transactional messages alone (passcodes, bank, delivery, appointments, promos)
-  it's 1 of 76: the card-payment receipt.
+**Learning from feedback** (`s08_simulate.py`: 8 simulated streams, learning only from marks):
+- **Scams the model missed.** After you mark one, 74% of its variants (new names, amounts, links, new numbers) are
+  caught, vs 9% without learning.
+- **Legitimate notices it flagged.** After "Not spam", all of that sender's similar notices stay in the inbox, vs
+  25%.
+- Errors on repeat campaigns halve. The base model already handles most of these streams, so the total cost
+  (5 × false positives + misses) stays within 2% of not learning, and a user who only ever marks spam sees no extra
+  false positives on held-out legit messages.
 
-The underlying gap is that public data has few modern legitimate texts. One "Not spam" tap fixes that message and
-its look-alikes, and the Conservative setting gives 0% FPR on both sets.
+The settings are the `hash` and `snd` (sender × wording) priors that `ml/scripts/s08_simulate.py` writes to
+`data/work/personalization.json` and `s11_package.py` ships in `model.json`: word and character n-grams retrain
+lightly (`hash` 4), sender × wording strongly (`snd` 0.25).
 
-**Learning from feedback** (`s08_simulate.py`: 8 simulated streams of transactional and spam messages, learning only
-from marks). Corrections carry over to the message coming back:
-- **Scams the model missed.** After you mark one, 65% of its variants (new names, amounts, links, new numbers) are
-  caught, vs 10% without learning.
-- **Legitimate notices it flagged.** After "Not spam", 75% of that sender's similar notices stay in the inbox, vs
-  12%.
-
-Overall (about 33 marks per 800 messages):
-- a user who corrects mistakes both ways ends at 95% of the no-learning cost (5 × false positives + misses), with
-  36% fewer errors on repeat campaigns;
-- a user who marks wrongly 5% of the time ends at 97%.
-
-The trade-off is deliberate ("light retraining"). Someone who only ever marks spam ends at 98%, but about 1.6% more
-legitimate transactional messages get flagged, because delivery and bank scams share wording with real notices.
-- Memory-only learning would avoid that drift, but generalizes "Not spam" less well (62% kept).
-- Stronger retraining keeps 88% but drifts 2.8%.
-
-The setting is the `hash` prior that `ml/scripts/s08_simulate.py` writes to `data/work/personalization.json` and
-`s11_package.py` ships in `model.json`.
-
-**On the phone (emulator measurement).** The encoder takes 13 ms (median) / 29 ms (95th percentile) per message.
-Results match the Python reference with zero changed decisions over 733 test cases. On the desktop JVM the match is
-exact (1e-14).
+**On the phone.** The bundle's JVM and on-device parity tests against the Python reference pass.
 
 ## Requirements
 
@@ -142,8 +147,9 @@ message store, so it shows up there too.
 cd ml
 uv sync
 uv run python -I scripts/s00_fetch.py        # public datasets → data/raw (licenses in MANIFEST.json)
-uv run python -I scripts/s01_corpus.py       # normalize, dedupe, near-duplicate clusters
-uv run python -I scripts/s02_split.py        # group-stratified splits + "new campaign" holdout
+uv run python -I scripts/s01_corpus.py       # normalize, dedupe, near-duplicate clusters (needs the inbox export)
+uv run python -I scripts/s01b_rider_pool.py  # unlabeled pool for pseudo-labeling (not part of the corpus)
+uv run python -I scripts/s02_split.py        # inbox time split, grouped splits, "new campaign" + inbox_eval holdouts
 uv run python -I scripts/s03_finetune.py     # fine-tune MiniLM (GPU)
 uv run python -I scripts/s04_export.py       # ONNX → fused → int8 per-channel → ORT format
 uv run python -I scripts/s05_embed.py        # int8 embeddings, batch size 1 (as on the phone)
@@ -158,12 +164,22 @@ uv run python -I scripts/s10_golden.py --prelim && uv run python -I scripts/s10_
 uv run pytest
 ```
 
-Training data (all permissively licensed):
+Training data:
 - UCI SMS Spam Collection, CC BY 4.0
 - Mishra & Soni 2022 SMS phishing, CC BY 4.0
 - NCSU `wspr-ncsu/sms-phishing`, MIT
 - UCL `reportsmishing/Smishing-Dataset-IMC25`, CC BY 4.0
 - About 160 hand-written modern legitimate-message templates
+- Indian corpora (`ml/data/raw/india/`): junioralive India Spam SMS, MIT; Ridham115 synthetic Indian scams, CC BY 4.0
+  (training only); and, with no license stated, the `cunique.csv` corpus (~77k messages with senders), IIIT-Delhi
+  SMSAssassin, and craftogrammer's transaction SMS
+
+Plus the user's own phone inbox, labeled by the user: `ml/data/raw/inbox/inbox_v1.jsonl`, private, never committed
+and not fetched by s00 (s01 fails without it). Its newest half is the `inbox_eval` split, used for evaluation only. Of
+its oldest half, the newest 20% validates and the rest trains.
+
+The inboxes of 93 Indian delivery riders (Kaggle, CC0) are kept outside the corpus as an unlabeled pool for
+pseudo-labeling.
 
 A separate set of 400 hand-written modern US messages is used for evaluation only.
 
@@ -171,5 +187,7 @@ A separate set of 400 hand-written modern US messages is used for evaluation onl
 
 - Scam "openers" with no link or ask ("Hi, is this Sarah?") read exactly like real first messages. The base model
   lets them through; your marks and the first-contact signal handle them.
+- A new promotion from a sender whose alerts you also get is judged on its wording alone the first time: Balanced
+  leaves about half of first-seen promotions in the inbox. One Spam mark per template teaches it.
 - Not in v1: MMS, search, blocking.
 - Learned data is deliberately excluded from cloud backup. Clearing the app's data resets what it learned.

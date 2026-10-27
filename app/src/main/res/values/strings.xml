@@ -112,6 +112,7 @@
     <string name="rescan_desc">Check every message again with the current model and settings</string>
     <string name="rescan_started">Rescanning all messages…</string>
     <string name="scan_progress_title">Rescanning messages</string>
+    <string name="recheck_progress_title">Re-checking messages</string>
     <string name="scan_progress_text">%1$,d of %2$,d checked</string>
     <string name="scan_done_title">Rescan complete</string>
     <plurals name="scan_done_checked">

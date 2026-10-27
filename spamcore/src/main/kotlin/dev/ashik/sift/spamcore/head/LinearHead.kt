@@ -7,8 +7,9 @@ import dev.ashik.sift.spamcore.head.HeadCodec.Block
 import kotlin.math.exp
 
 /**
- * score_v1 (ml/SPEC.md); mirrors ml/src/smsml/head.py. Immutable: personalization produces a new instance that
- * shares the (large) arrays it didn't change.
+ * score_v2 (ml/SPEC.md); mirrors ml/src/smsml/head.py. Immutable: personalization produces a new instance that
+ * shares the (large) arrays it didn't change. [wHash] weighs the n-gram vector, [wSnd] the sender × content (SND)
+ * vector: the same bucket index means a different weight in each.
  */
 class LinearHead(
     val bias: Double,
@@ -17,6 +18,7 @@ class LinearHead(
     val wMeta: FloatArray,
     val muMeta: FloatArray,
     val wHash: FloatArray,
+    val wSnd: FloatArray,
     val idf: FloatArray,
     val fbBias: Double,
     val fbScale: Double,
@@ -25,36 +27,42 @@ class LinearHead(
     init {
         require(wEmbed.size == EMBED_DIM && muEmbed.size == EMBED_DIM) { "embedding block size" }
         require(wMeta.size == Features.N_META && muMeta.size == Features.N_META && wMetaFb.size == Features.N_META)
-        require(wHash.size == Features.BUCKETS && idf.size == Features.BUCKETS) { "hash block size" }
+        require(wHash.size == Features.BUCKETS && wSnd.size == Features.BUCKETS && idf.size == Features.BUCKETS) {
+            "sparse block size"
+        }
     }
 
     /** Logit with the embedding (accumulated in double, SPEC order). A null embedding contributes 0. */
-    fun z(embedding: FloatArray?, meta: FloatArray, sparse: SparseVector): Double {
+    fun z(embedding: FloatArray?, meta: FloatArray, sparse: SparseVector, snd: SparseVector): Double {
         var z = bias
         if (embedding != null) for (i in 0 until EMBED_DIM) z += wEmbed[i].toDouble() * (embedding[i].toDouble() - muEmbed[i])
         for (j in 0 until Features.N_META) z += wMeta[j].toDouble() * (meta[j].toDouble() - muMeta[j])
         for (k in 0 until sparse.size) z += wHash[sparse.indices[k]].toDouble() * sparse.values[k]
+        for (k in 0 until snd.size) z += wSnd[snd.indices[k]].toDouble() * snd.values[k]
         return z
     }
 
-    /** Lexical-only fallback logit, used when the encoder is unavailable. */
-    fun zFallback(meta: FloatArray, sparse: SparseVector): Double {
+    /** Lexical-only fallback logit, used when the encoder is unavailable. The SND term is the full head's, unscaled. */
+    fun zFallback(meta: FloatArray, sparse: SparseVector, snd: SparseVector): Double {
         var h = 0.0
         for (k in 0 until sparse.size) h += wHash[sparse.indices[k]].toDouble() * sparse.values[k]
         var z = fbBias + fbScale * h
         for (j in 0 until Features.N_META) z += wMetaFb[j].toDouble() * (meta[j].toDouble() - muMeta[j])
+        for (k in 0 until snd.size) z += wSnd[snd.indices[k]].toDouble() * snd.values[k]
         return z
     }
 
     /**
      * The largest positive contributions behind a score, as readable cues: metadata features by name, the
-     * embedding block as a whole ("wording"), and the strongest n-gram words. [featureStrings] maps bucket index
-     * to the feature strings that hashed there.
+     * embedding block as a whole ("wording"), and the strongest n-gram words and sender × content pairs ("“limit”
+     * from ICICIT"). [featureStrings] maps bucket index to the feature strings of both sparse vectors that hashed
+     * there.
      */
     fun explain(
         embedding: FloatArray?,
         meta: FloatArray,
         sparse: SparseVector,
+        snd: SparseVector,
         featureStrings: Map<Int, List<String>>,
         limit: Int = 4,
     ): List<Cue> {
@@ -75,14 +83,26 @@ class LinearHead(
             if (c <= 0.15) continue
             val label = featureStrings[sparse.indices[k]]?.firstOrNull { it.startsWith("w:") || it.startsWith("b:") || it.startsWith("u:") }
                 ?: continue
-            words += label.substring(2) to c
+            words += "Contains “${label.substring(2)}”" to c
         }
-        words.sortedByDescending { it.second }.take(3).forEach { (w, c) -> cues += Cue("Contains “$w”", c.toFloat()) }
+        for (k in 0 until snd.size) {
+            val c = wSnd[snd.indices[k]].toDouble() * snd.values[k]
+            if (c <= 0.15) continue
+            val label = featureStrings[snd.indices[k]]?.firstOrNull { it.startsWith("s:") } ?: continue
+            // "s:" + sid + "|" + a word or link-domain string, whose only ':' is its prefix's.
+            val bar = label.lastIndexOf(':') - 2
+            words += "“${label.substring(bar + 3)}” from ${label.substring(2, bar)}" to c
+        }
+        words.sortedByDescending { it.second }.take(3).forEach { (text, c) -> cues += Cue(text, c.toFloat()) }
         return cues.sortedByDescending { it.weight }.take(limit)
     }
 
-    fun copyWith(wEmbed: FloatArray = this.wEmbed, wMeta: FloatArray = this.wMeta, wHash: FloatArray = this.wHash) =
-        LinearHead(bias, wEmbed, muEmbed, wMeta, muMeta, wHash, idf, fbBias, fbScale, wMetaFb)
+    fun copyWith(
+        wEmbed: FloatArray = this.wEmbed,
+        wMeta: FloatArray = this.wMeta,
+        wHash: FloatArray = this.wHash,
+        wSnd: FloatArray = this.wSnd,
+    ) = LinearHead(bias, wEmbed, muEmbed, wMeta, muMeta, wHash, wSnd, idf, fbBias, fbScale, wMetaFb)
 
     fun toBlocks(): LinkedHashMap<String, Block> = linkedMapOf(
         "bias" to Block.F64(doubleArrayOf(bias)),
@@ -91,6 +111,7 @@ class LinearHead(
         "w_meta" to Block.F32(wMeta),
         "mu_meta" to Block.F32(muMeta),
         "w_hash" to Block.F32(wHash),
+        "w_snd" to Block.F32(wSnd),
         "idf" to Block.F32(idf),
         "fb_bias" to Block.F64(doubleArrayOf(fbBias)),
         "fb_scale" to Block.F64(doubleArrayOf(fbScale)),
@@ -106,8 +127,8 @@ class LinearHead(
             fun f32(name: String) = (b[name] as? Block.F32)?.data ?: throw HeadCodec.FormatException("missing $name")
             fun f64(name: String) = (b[name] as? Block.F64)?.data?.get(0) ?: throw HeadCodec.FormatException("missing $name")
             return LinearHead(
-                f64("bias"), f32("w_embed"), f32("mu_embed"), f32("w_meta"), f32("mu_meta"), f32("w_hash"), f32("idf"),
-                f64("fb_bias"), f64("fb_scale"), f32("w_meta_fb"),
+                f64("bias"), f32("w_embed"), f32("mu_embed"), f32("w_meta"), f32("mu_meta"), f32("w_hash"), f32("w_snd"),
+                f32("idf"), f64("fb_bias"), f64("fb_scale"), f32("w_meta_fb"),
             )
         }
 

@@ -2,6 +2,7 @@ package dev.ashik.sift.spamcore
 
 import dev.ashik.sift.spamcore.combine.SpamDecider
 import dev.ashik.sift.spamcore.combine.Thresholds
+import dev.ashik.sift.spamcore.features.Features
 import dev.ashik.sift.spamcore.features.SparseVector
 import dev.ashik.sift.spamcore.memory.LabeledMemory
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -38,6 +39,21 @@ class DecisionTest {
         assertEquals(2L, mem.match(ham, "bank", setOf("phish.top"))?.key)
         assertEquals(2L, mem.match(ham, "other", setOf("bank.com"))?.key)
         assertNull(mem.match(ham, "other", setOf("phish.top")))
+        assertNull(mem.match(ham, null, setOf("phish.top")))
         assertEquals(0, mem.without(listOf(1L, 2L)).size)
+    }
+
+    @Test
+    fun `every route of a DLT sender is the same sender for ham matches`() {
+        val ham = vec(10 to 1f, 11 to 1f, 12 to 1f)
+        val mem = LabeledMemory(tauSpam = 0.8, tauHam = 0.9)
+            .with(LabeledMemory.Entry(2, 0, ham, Features.senderId("AX-ICICIT-S"), setOf("icici.com")))
+        assertEquals(2L, mem.match(ham, Features.senderId("JD-ICICIT-T"), setOf("icici-rewards.top"))?.key)
+        assertEquals(2L, mem.match(ham, Features.senderId("ICICIT"), setOf("icici-rewards.top"))?.key)
+        assertNull(mem.match(ham, Features.senderId("VM-HDFCBK-S"), setOf("icici-rewards.top")))
+        // Without a sender identity there is no same sender; known domains still match.
+        val unknown = LabeledMemory(tauSpam = 0.8, tauHam = 0.9).with(LabeledMemory.Entry(3, 0, ham, Features.senderId("unknown"), emptySet()))
+        assertNull(unknown.match(ham, Features.senderId(""), setOf("phish.top")))
+        assertEquals(3L, unknown.match(ham, null, emptySet())?.key)
     }
 }

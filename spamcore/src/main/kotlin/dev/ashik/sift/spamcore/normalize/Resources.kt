@@ -2,7 +2,7 @@ package dev.ashik.sift.spamcore.normalize
 
 import java.io.InputStream
 
-/** The resource lists norm_v1 / feat_v1 depend on (ml/SPEC.md). Same files and parsing as ml/src/smsml/resources.py. */
+/** The resource lists norm_v1 / feat_v2 depend on (ml/SPEC.md). Same files and parsing as ml/src/smsml/resources.py. */
 class Resources(
     val gsm7: Set<Int>,
     val confusables: Map<Int, String>,

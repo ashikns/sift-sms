@@ -17,14 +17,15 @@ class PreparedExample(
     val embedding: FloatArray?,
     val meta: FloatArray,
     val sparse: SparseVector,
-    val senderKey: String = "",
+    /** The sender × content (SND) vector; empty without a sender identity. */
+    val snd: SparseVector,
+    /** The sender's identity (ml/SPEC.md sid), for the memory's "not spam" rule. */
+    val sid: String? = null,
     val domains: Set<String> = emptySet(),
 )
 
 /** Prior strengths per weight block. A block whose prior is ≥ [FROZEN] is pinned at its base weights. */
-data class Priors(val embed: Double = 1.0, val meta: Double = 4.0, val hash: Double = 0.5) {
-    fun scaled(k: Double) = Priors(embed * k, meta * k, hash * k)
-
+data class Priors(val embed: Double = 1.0, val meta: Double = 4.0, val hash: Double = 0.5, val snd: Double = 0.5) {
     companion object {
         const val FROZEN = 1e5
     }
@@ -78,10 +79,11 @@ object ExampleWeighting {
 /**
  * MAP logistic regression anchored to the base head (see ml/src/smsml/head.py personalize):
  *   minimize Σ cᵢ·logloss(zᵢ, yᵢ) + ½ Σ_g λ_g ‖w_g − w_base,g‖²
- * over the embedding block, the content metadata and the active hashed weights. The bias and the sender-type
- * features stay frozen at the base weights, so marks only teach the model about message content (a mark on one
- * short-code promo must not shift every short-code message). Solved with L-BFGS (memory 7) and Armijo backtracking,
- * in double precision and deterministic order.
+ * over the embedding block, the content metadata, the active hashed n-gram weights and the active sender × content
+ * (SND) weights. The bias and the sender-type features stay frozen at the base weights, so marks only teach the model
+ * about message content (a mark on one short-code promo must not shift every short-code message), and about a sender
+ * only together with that message's words and link domains. Solved with L-BFGS (memory 7) and Armijo backtracking, in
+ * double precision and deterministic order.
  */
 class MapLogisticTrainer(
     private val memory: Int = 7,
@@ -94,19 +96,25 @@ class MapLogisticTrainer(
         val use = examples.indices.filter { weights[it] > 0.0 }
         if (use.isEmpty()) return Result(base, 0, 0.0, 0.0)
         val active = use.flatMap { examples[it].sparse.indices.asIterable() }.toSortedSet().toIntArray()
+        val sndActive = use.flatMap { examples[it].snd.indices.asIterable() }.toSortedSet().toIntArray()
         val pos = HashMap<Int, Int>(active.size * 2).apply { active.forEachIndexed { j, k -> put(k, j) } }
+        val sndPos = HashMap<Int, Int>(sndActive.size * 2).apply { sndActive.forEachIndexed { j, k -> put(k, j) } }
         val de = LinearHead.EMBED_DIM
         val dm = Features.N_META
-        val d = de + dm + active.size
+        val hOff = de + dm
+        val sOff = hOff + active.size
+        val d = sOff + sndActive.size
         val theta0 = DoubleArray(d)
         for (i in 0 until de) theta0[i] = base.wEmbed[i].toDouble()
         for (j in 0 until dm) theta0[de + j] = base.wMeta[j].toDouble()
-        for ((j, k) in active.withIndex()) theta0[de + dm + j] = base.wHash[k].toDouble()
+        for ((j, k) in active.withIndex()) theta0[hOff + j] = base.wHash[k].toDouble()
+        for ((j, k) in sndActive.withIndex()) theta0[sOff + j] = base.wSnd[k].toDouble()
         val lambda = DoubleArray(d) { i ->
             when {
                 i < de -> priors.embed
-                i < de + dm -> priors.meta
-                else -> priors.hash
+                i < hOff -> priors.meta
+                i < sOff -> priors.hash
+                else -> priors.snd
             }
         }
         // Frozen coordinates get a zero gradient, so L-BFGS never moves them off the base weights: always the
@@ -114,8 +122,9 @@ class MapLogisticTrainer(
         val frozen = BooleanArray(d) { i ->
             when {
                 i < de -> priors.embed >= Priors.FROZEN
-                i < de + dm -> (i - de) in Features.SENDER_RANGE || priors.meta >= Priors.FROZEN
-                else -> priors.hash >= Priors.FROZEN
+                i < hOff -> (i - de) in Features.SENDER_RANGE || priors.meta >= Priors.FROZEN
+                i < sOff -> priors.hash >= Priors.FROZEN
+                else -> priors.snd >= Priors.FROZEN
             }
         }
         val rows = use.map { i ->
@@ -124,9 +133,11 @@ class MapLogisticTrainer(
             val meta = DoubleArray(dm) { e.meta[it].toDouble() - base.muMeta[it] }
             val hp = IntArray(e.sparse.size) { pos.getValue(e.sparse.indices[it]) }
             val hv = DoubleArray(e.sparse.size) { e.sparse.values[it].toDouble() }
-            Row(emb, meta, hp, hv, e.label.toDouble(), weights[i])
+            val sp = IntArray(e.snd.size) { sndPos.getValue(e.snd.indices[it]) }
+            val sv = DoubleArray(e.snd.size) { e.snd.values[it].toDouble() }
+            Row(emb, meta, hp, hv, sp, sv, e.label.toDouble(), weights[i])
         }
-        val problem = Problem(base.bias, rows, theta0, lambda, frozen, de, dm)
+        val problem = Problem(base.bias, rows, theta0, lambda, frozen, de, dm, sOff)
 
         val theta = theta0.copyOf()
         val g = DoubleArray(d)
@@ -192,15 +203,20 @@ class MapLogisticTrainer(
         val wEmbed = FloatArray(de) { theta[it].toFloat() }
         val wMeta = FloatArray(dm) { theta[de + it].toFloat() }
         val wHash = base.wHash.copyOf()
-        for ((j, k) in active.withIndex()) wHash[k] = theta[de + dm + j].toFloat()
-        return Result(base.copyWith(wEmbed = wEmbed, wMeta = wMeta, wHash = wHash), iter, f, infNorm(g))
+        for ((j, k) in active.withIndex()) wHash[k] = theta[hOff + j].toFloat()
+        val wSnd = if (sndActive.isEmpty()) base.wSnd else base.wSnd.copyOf()
+        for ((j, k) in sndActive.withIndex()) wSnd[k] = theta[sOff + j].toFloat()
+        return Result(base.copyWith(wEmbed = wEmbed, wMeta = wMeta, wHash = wHash, wSnd = wSnd), iter, f, infNorm(g))
     }
 
-    private class Row(val emb: DoubleArray?, val meta: DoubleArray, val hp: IntArray, val hv: DoubleArray, val y: Double, val c: Double)
+    private class Row(
+        val emb: DoubleArray?, val meta: DoubleArray, val hp: IntArray, val hv: DoubleArray, val sp: IntArray,
+        val sv: DoubleArray, val y: Double, val c: Double,
+    )
 
     private class Problem(
         val bias: Double, val rows: List<Row>, val theta0: DoubleArray, val lambda: DoubleArray, val frozen: BooleanArray,
-        val de: Int, val dm: Int,
+        val de: Int, val dm: Int, val sOff: Int,
     ) {
         /** Returns the objective and writes the gradient into [g]. */
         fun eval(theta: DoubleArray, g: DoubleArray): Double {
@@ -216,11 +232,13 @@ class MapLogisticTrainer(
                 if (r.emb != null) for (i in 0 until de) z += theta[i] * r.emb[i]
                 for (j in 0 until dm) z += theta[de + j] * r.meta[j]
                 for (k in r.hp.indices) z += theta[hOff + r.hp[k]] * r.hv[k]
+                for (k in r.sp.indices) z += theta[sOff + r.sp[k]] * r.sv[k]
                 loss += r.c * (softplus(z) - r.y * z)
                 val res = r.c * (LinearHead.sigmoid(z) - r.y)
                 if (r.emb != null) for (i in 0 until de) g[i] += res * r.emb[i]
                 for (j in 0 until dm) g[de + j] += res * r.meta[j]
                 for (k in r.hp.indices) g[hOff + r.hp[k]] += res * r.hv[k]
+                for (k in r.sp.indices) g[sOff + r.sp[k]] += res * r.sv[k]
             }
             for (i in g.indices) if (frozen[i]) g[i] = 0.0
             return loss

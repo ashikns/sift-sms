@@ -93,8 +93,8 @@ data class PersonalizationConfig(
 )
 
 @Serializable
-data class PriorsConfig(val embed: Double, val meta: Double, val hash: Double) {
-    fun toPriors() = Priors(embed, meta, hash)
+data class PriorsConfig(val embed: Double, val meta: Double, val hash: Double, val snd: Double) {
+    fun toPriors() = Priors(embed, meta, hash, snd)
 }
 
 @Serializable
@@ -135,7 +135,7 @@ class ModelBundle(
             val config = source.open("model.json").use { JSON.decodeFromString(ModelConfig.serializer(), it.readBytes().decodeToString()) }
             val verify = config.bundleVersion != alreadyVerified
             if (config.schema != SCHEMA) throw BundleException("unsupported bundle schema ${config.schema}")
-            if (config.features.version != "feat_v1" || config.normalizer.version != "norm_v1") {
+            if (config.features.version != Features.VERSION || config.normalizer.version != "norm_v1") {
                 throw BundleException("unsupported feature/normalizer version ${config.features.version}/${config.normalizer.version}")
             }
             if (config.features.hashBits != Features.BITS || config.features.hashSeed != Features.SEED.toLong() ||

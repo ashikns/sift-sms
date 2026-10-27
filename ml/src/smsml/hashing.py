@@ -1,4 +1,4 @@
-"""MurmurHash3 x86_32 feature hashing (SPEC.md feat_v1). `murmur3_32` is a readable reference; `mmh3` is used for speed."""
+"""MurmurHash3 x86_32 feature hashing (SPEC.md feat_v2). `murmur3_32` is a readable reference; `mmh3` is used for speed."""
 
 from __future__ import annotations
 

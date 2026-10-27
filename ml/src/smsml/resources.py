@@ -1,4 +1,4 @@
-"""Loads the resource lists that norm_v1 / feat_v1 depend on (SPEC.md). Kotlin parses the same files."""
+"""Loads the resource lists that norm_v1 / feat_v2 depend on (SPEC.md). Kotlin parses the same files."""
 
 from __future__ import annotations
 

@@ -1,4 +1,5 @@
-"""feat_v1 — hashed n-gram features and the 27 metadata values (SPEC.md). Mirrored by spamcore's features package."""
+"""feat_v2 — hashed n-gram features, the sender × content (SND) vector and the 27 metadata values (SPEC.md).
+Mirrored by spamcore's features package."""
 
 from __future__ import annotations
 
@@ -8,6 +9,8 @@ import numpy as np
 
 from .hashing import BUCKETS, hash_feature
 from .normalize import CURRENCY, Normalized
+
+FEATURE_VERSION = "feat_v2"
 
 META_NAMES = (
     "len_log", "url_count", "url_shortener", "url_ip_host", "url_risky_tld", "url_punycode_or_at",
@@ -25,6 +28,22 @@ PHONE_START = frozenset("0123456789+(")
 OPTOUT_VERBS = ("reply", "text", "txt", "send", "opt")
 OTP_WORDS = ("code", "otp", "passcode", "verification", "pin", "0fa")  # "2FA" reads "0fa" after digit folding
 LN_1001 = math.log(1001.0)
+DLT_LETTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+DLT_ID_CHARS = DLT_LETTERS | frozenset("0123456789")
+
+
+def sender_id(key: str | None) -> str | None:
+    """sid (SPEC.md): the identity of a normalized sender key, or None. An Indian DLT header `AX-ICICIT-S` is its
+    sender ID `ICICIT` (the route prefix varies per message; the category suffix is not used); any other key is
+    itself, with unpaired surrogates as U+FFFD."""
+    if not key or key == "unknown":
+        return None
+    parts = key.split("-")
+    if (len(parts) in (2, 3) and len(parts[0]) == 2 and all(c in DLT_LETTERS for c in parts[0])
+            and 3 <= len(parts[1]) <= 8 and all(c in DLT_ID_CHARS for c in parts[1])
+            and (len(parts) == 2 or (len(parts[2]) == 1 and parts[2] in DLT_LETTERS))):
+        return parts[1]
+    return "".join("\ufffd" if 0xD800 <= ord(c) <= 0xDFFF else c for c in key)
 
 
 def word_tokens(ng: str) -> list[str]:
@@ -44,20 +63,36 @@ def word_tokens(ng: str) -> list[str]:
     return out
 
 
-def feature_strings(n: Normalized) -> tuple[list[str], list[str], list[str]]:
-    """(char, word, url) families, each deduplicated and sorted by code point."""
-    s = " " + n.ng + " "
-    chars = {"c:" + s[i:i + k] for k in (3, 4, 5) for i in range(len(s) - k + 1)}
+def word_strings(n: Normalized) -> list[str]:
     toks = word_tokens(n.ng)
     words = {"w:" + t for t in toks}
     words.update("b:" + toks[i] + " " + toks[i + 1] for i in range(len(toks) - 1))
+    return sorted(words)
+
+
+def url_strings(n: Normalized) -> list[str]:
     urls: set[str] = set()
     for u in n.urls:
         urls.add("u:" + u.domain)
         urls.add("h:" + u.host)
         if u.tld:
             urls.add("t:" + u.tld)
-    return sorted(chars), sorted(words), sorted(urls)
+    return sorted(urls)
+
+
+def feature_strings(n: Normalized) -> tuple[list[str], list[str], list[str]]:
+    """(char, word, url) families, each deduplicated and sorted by code point."""
+    s = " " + n.ng + " "
+    chars = {"c:" + s[i:i + k] for k in (3, 4, 5) for i in range(len(s) - k + 1)}
+    return sorted(chars), word_strings(n), url_strings(n)
+
+
+def snd_strings(sid: str | None, n: Normalized) -> list[str]:
+    """The SND family: "s:" + sid + "|" + each WORD string and each URL `u:` string; none without a sid."""
+    if sid is None:
+        return []
+    prefix = "s:" + sid + "|"
+    return [prefix + f for f in word_strings(n) + [f for f in url_strings(n) if f.startswith("u:")]]
 
 
 def _family_vector(strings: list[str], idf: np.ndarray) -> dict[int, float]:
@@ -81,6 +116,20 @@ def sparse_features(n: Normalized, idf: np.ndarray) -> tuple[np.ndarray, np.ndar
     items = sorted((k, x) for k, x in total.items() if x != 0.0)
     idx = np.fromiter((k for k, _ in items), dtype=np.int32, count=len(items))
     val = np.fromiter((x for _, x in items), dtype=np.float64, count=len(items)).astype(np.float32)
+    return idx, val
+
+
+def snd_features(sid: str | None, n: Normalized) -> tuple[np.ndarray, np.ndarray]:
+    """The SND vector: sorted int32 indices and float32 values (±1 per string summed per bucket, L2-normalized, no
+    idf). Separate from the n-gram vector, which alone drives near-duplicate similarity."""
+    v: dict[int, int] = {}
+    for f in snd_strings(sid, n):
+        idx, sign = hash_feature(f)
+        v[idx] = v.get(idx, 0) + sign
+    items = sorted((k, x) for k, x in v.items() if x != 0)
+    norm = math.sqrt(sum(x * x for _, x in items))
+    idx = np.fromiter((k for k, _ in items), dtype=np.int32, count=len(items))
+    val = np.fromiter((x / norm for _, x in items), dtype=np.float64, count=len(items)).astype(np.float32)
     return idx, val
 
 
@@ -145,7 +194,8 @@ def currency_amount(ng: str, toks: list[str]) -> bool:
 
 
 def metadata(n: Normalized) -> np.ndarray:
-    """The metadata values; the sender features (21-26) stay 0 (public datasets have no sender info)."""
+    """The metadata values. The sender features (21-26) stay 0 offline, even for rows with a sender: sender
+    information reaches the trained weights only through the SND vector."""
     toks = word_tokens(n.ng)
     words = set(toks)
     m = [0.0] * N_META
@@ -200,6 +250,7 @@ def sparse_cosine(ai: np.ndarray, av: np.ndarray, bi: np.ndarray, bv: np.ndarray
 
 
 __all__ = [
-    "META_NAMES", "N_META", "SENDER_SLICE", "BUCKETS", "word_tokens",
-    "feature_strings", "sparse_features", "bucket_set", "idf_from_df", "metadata", "sparse_cosine",
+    "FEATURE_VERSION", "META_NAMES", "N_META", "SENDER_SLICE", "BUCKETS", "sender_id", "word_tokens", "word_strings",
+    "url_strings", "feature_strings", "snd_strings", "sparse_features", "snd_features", "bucket_set", "idf_from_df",
+    "metadata", "sparse_cosine",
 ]

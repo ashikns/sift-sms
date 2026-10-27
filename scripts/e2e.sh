@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end checks on the emulator: real SMS delivery (adb emu sms send), spam placement, notifications,
-# multipart, learning from feedback, Undo, the learning entries page, a rescan of all history, role loss + reconcile,
-# Doze. Emulator only.
+# multipart, learning from feedback, Undo, the learning entries page, a rescan of all history, the re-check after a
+# retrain, role loss + reconcile, Doze. Emulator only.
 #
 #   scripts/emulator.sh          # boot the AVD (once)
 #   scripts/e2e.sh               # build + install the debug app, run every scenario
@@ -196,6 +196,23 @@ FLAGGED=$(seed_stat scamsFlagged)
 WRONG=$(seed_stat ordinaryFlagged)
 (( FLAGGED * 10 >= SCAMS * 9 )) && pass "old scams now in Spam ($FLAGGED of $SCAMS)" || fail "old scams in Spam: $FLAGGED of $SCAMS"
 (( WRONG * 10 <= 800 - SCAMS )) && pass "old ordinary texts mostly stay out of Spam ($WRONG flagged)" || fail "ordinary texts in Spam: $WRONG"
+$A shell input keyevent KEYCODE_HOME
+
+step "Re-check after a retrain"
+# Messages this old are only re-scored by the re-check that follows every retrain. Marking one old seeded parcel scam
+# "not spam" makes its copies from other senders near-duplicates of a not-spam message.
+rechecks() { local d; d=$($A logcat -d -s WM-WorkerWrapper:I 2>/dev/null); echo "$d" | grep -F RecheckWorker | grep -cF SUCCESS; }
+recheck_progress() { local d; d=$(scan_dump); [[ "$d" == *"Re-checking messages"* ]]; }
+R0=$(rechecks)
+F0=$(seed_stat scamsFlagged)
+# (Matched here: the device shell strips quotes inside --where, and a "+" number then compares as a number.)
+SEED0=$($A shell content query --uri content://sms --projection _id:address 2>/dev/null | tr -d '\r' | grep -E "address=\+15550190000$" | field _id)
+call markNotSpam "$SEED0" >/dev/null
+wait_until 30 recheck_progress && pass "re-check progress notification" || fail "no re-check progress notification"
+recheck_ran() { [[ "$(rechecks)" -gt "$R0" ]]; }
+wait_until 120 recheck_ran && pass "a re-check of all history ran after the retrain" || fail "no re-check after the mark"
+F1=$(seed_stat scamsFlagged)
+(( F1 <= F0 - 100 )) && pass "the re-check moved old copies out of Spam ($F0 -> $F1 flagged)" || fail "old copies still flagged: $F0 -> $F1"
 $A shell input keyevent KEYCODE_HOME
 
 step "Role loss and reconcile"

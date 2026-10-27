@@ -19,3 +19,9 @@ ncsu:
   # (sources/lang.py; NCSU rows have no language field).
   min_ascii_letter_ratio: 0.9
   min_stopword_hits: 1
+
+inbox:
+  # The user's own phone inbox, labeled by the user (sources/inbox.py), relative to data/raw/. Private and gitignored;
+  # s00 doesn't fetch it and s01 fails without it. Its newest half is the inbox_eval split; its oldest half trains,
+  # split by time (pipeline.yaml split.time_val).
+  file: inbox/inbox_v1.jsonl

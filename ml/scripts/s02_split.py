@@ -1,15 +1,23 @@
-"""s02: group-stratified train/val/test split, a "future" holdout, and training caps.
+"""s02: the inbox's time split, group-stratified train/val/test for the rest, a "future" holdout, and training caps.
 
     uv run python -I scripts/s02_split.py
 
 Writes data/work/corpus_split.parquet with a `split` column:
-  train | val_a | val_b | test | future | capped
-- future: clusters containing any timestamped message at or after the newest `future_frac` quantile.
-- templates are split by template_id; everything else by cluster with StratifiedGroupKFold over (label, source).
+  train | val_a | val_b | test | future | capped | inbox_eval
+- inbox_eval: rows a source holds out for evaluation (schema `holdout`), i.e. the inbox's newest half. Nothing trains,
+  selects, calibrates or tunes on them; s05/s06 only embed and featurize them for evaluation.
+- The inbox's other rows (its oldest half) mainly train, split by time: the newest `time_val` of them validate (val_a
+  and val_b balanced by cluster), the rest train. They're never tested, future or capped, and their templates recur
+  across the cut by design.
+- Synthetic sources (registry `train_only`) only train. Rows that s01 clustered with any of these training rows train
+  too (templates move whole), so no test or future cluster holds a near-duplicate of one.
+- future: clusters containing any timestamped message at or after the newest `future_frac` quantile of the rest.
+- templates are split by template_id, and rows of other sources that s01 clustered with a template's messages follow
+  it; everything else by cluster with StratifiedGroupKFold over (label, source).
 - val is halved by cluster: val_a fits the stacker (s06), val_b scores it on clusters it didn't see. Everywhere else
   (s03 checkpoint selection, s04 export checks, s07 thresholds, the s08 simulation pool) both halves are used together.
 - train keeps at most max(`max_per_cluster_train`, √n) rows per cluster of n and at most `max_spam_ratio` spam per ham
-  (excess rows become `capped`, used nowhere).
+  (excess rows become `capped`, used nowhere). The inbox's rows count toward the ratio but are never capped.
 """
 
 from __future__ import annotations
@@ -22,6 +30,9 @@ import pandas as pd
 from sklearn.model_selection import StratifiedGroupKFold
 
 from smsml.pipeline import config, work
+from smsml.sources import SOURCES
+
+TRAIN_ONLY = frozenset(s.name for s in SOURCES if s.train_only)
 
 
 def stable_unit(key: str, salt: str) -> float:
@@ -29,29 +40,55 @@ def stable_unit(key: str, salt: str) -> float:
     return int.from_bytes(h[:8], "little") / 2 ** 64
 
 
-def main() -> int:
-    cfg = config()
-    sc = cfg["split"]
-    seed = int(cfg["seed"])
+def assign_splits(df: pd.DataFrame, sc: dict, seed: int, train_only: frozenset[str] = TRAIN_ONLY) -> pd.DataFrame:
+    """`df` with its `split` column (see the module docstring); `sc` is pipeline.yaml's split section."""
     rng = np.random.default_rng(seed)
-    df = pd.read_parquet(work("corpus.parquet"))
+    df = df.copy()
     df["split"] = ""
 
+    # Source holdouts: evaluation only.
+    held = df["holdout"].notna()
+    df.loc[held, "split"] = df.loc[held, "holdout"]
+
+    # The holdout's source (the inbox) splits its other rows by time. The newest validate, cluster by cluster (largest
+    # first, onto the smaller half); the older ones train.
+    own = df["source"].isin(set(df.loc[held, "source"])) & ~held
+    order = df[own].sort_values(["timestamp", "source_id"]).index
+    late = order[len(order) - int(round(float(sc["time_val"]) * len(order))):]
+    df.loc[order.difference(late), "split"] = "train"
+    size = {"val_a": 0, "val_b": 0}
+    for cid, n in df.loc[late].groupby("cluster_id").size().sort_values(ascending=False, kind="stable").items():
+        half = min(size, key=size.get)
+        size[half] += n
+        df.loc[late[(df.loc[late, "cluster_id"] == cid).to_numpy()], "split"] = half
+
+    # Synthetic sources only train, and so does whatever s01 clustered with these training rows (templates below).
+    synthetic = df["source"].isin(train_only)
+    df.loc[synthetic, "split"] = "train"
+    trained = set(df.loc[own | synthetic, "cluster_id"])
+    df.loc[(df["split"] == "") & df["cluster_id"].isin(trained) & (df["source"] != "templates"), "split"] = "train"
+
     # Future holdout: campaigns (clusters) that first appear after the cutoff, i.e. unseen in training.
-    ts = df["timestamp"].dropna()
-    if len(ts):
-        cutoff = ts.quantile(1 - float(sc["future_frac"]))
-        start = df.dropna(subset=["timestamp"]).groupby("cluster_id")["timestamp"].min()
+    timed = df["split"] == ""
+    stamped = df[timed].dropna(subset=["timestamp"])
+    if len(stamped):
+        cutoff = stamped["timestamp"].quantile(1 - float(sc["future_frac"]))
+        start = stamped.groupby("cluster_id")["timestamp"].min()
         future_clusters = set(start[start >= cutoff].index)
-        df.loc[df["cluster_id"].isin(future_clusters), "split"] = "future"
+        df.loc[timed & df["cluster_id"].isin(future_clusters), "split"] = "future"
         print(f"future cutoff {cutoff}: {len(future_clusters)} new campaigns, {int((df['split'] == 'future').sum())} rows")
 
-    # Templates by template id.
+    # Templates by template id (one clustered with a training row trains); their near-duplicates from other sources
+    # follow them.
     tmask = (df["source"] == "templates") & (df["split"] == "")
+    hot = set(df.loc[tmask & df["cluster_id"].isin(trained), "template_id"])
     for tid in df.loc[tmask, "template_id"].dropna().unique():
         u = stable_unit(str(tid), "tpl")
-        part = "train" if u < sc["train"] else ("val" if u < sc["train"] + sc["val"] else "test")
+        part = "train" if tid in hot or u < sc["train"] else ("val" if u < sc["train"] + sc["val"] else "test")
         df.loc[tmask & (df["template_id"] == tid), "split"] = part
+    of_template = df[tmask].groupby("cluster_id")["split"].first()
+    follow = (df["split"] == "") & df["cluster_id"].isin(of_template.index)
+    df.loc[follow, "split"] = df.loc[follow, "cluster_id"].map(of_template)
 
     # Everything else by cluster.
     rest = df.index[df["split"] == ""]
@@ -68,8 +105,8 @@ def main() -> int:
     val = df["split"] == "val"
     df.loc[val, "split"] = ["val_a" if stable_unit(c, "val") < 0.5 else "val_b" for c in df.loc[val, "cluster_id"]]
 
-    # Training caps.
-    train = df.index[df["split"] == "train"]
+    # Training caps (not on the inbox's rows).
+    train = df.index[(df["split"] == "train") & ~own]
     keep = []
     for _, idx in df.loc[train].groupby("cluster_id").groups.items():
         idx = list(idx)
@@ -80,32 +117,49 @@ def main() -> int:
         keep.extend(idx)
     capped = set(train) - set(keep)
     t = df.loc[keep]
-    n_ham, n_spam = int((t["label"] == 0).sum()), int((t["label"] == 1).sum())
+    exempt = df.loc[own & (df["split"] == "train"), "label"]
+    n_ham = int((t["label"] == 0).sum() + (exempt == 0).sum())
+    n_spam = int((t["label"] == 1).sum() + (exempt == 1).sum())
     max_spam = int(sc["max_spam_ratio"] * n_ham)
     if n_spam > max_spam:
-        spam_clusters = t.loc[t["label"] == 1, "cluster_id"].unique()
+        budget = max_spam - int((exempt == 1).sum())
+        spam_clusters = t.loc[t["label"] == 1, "cluster_id"].unique().tolist()
         rng.shuffle(spam_clusters)
         counts = t.loc[t["label"] == 1].groupby("cluster_id").size()
         kept, total = set(), 0
         for c in spam_clusters:
-            if total + counts[c] > max_spam:
+            if total + counts[c] > budget:
                 continue
             kept.add(c)
             total += counts[c]
         drop = t.index[(t["label"] == 1) & ~t["cluster_id"].isin(kept)]
         capped |= set(drop)
     df.loc[list(capped), "split"] = "capped"
+    return df
 
+
+def leaking_clusters(df: pd.DataFrame) -> list[str]:
+    """Clusters with rows in train and in an evaluation split. The inbox's time-split rows share templates across the
+    cut by design, so a cluster holding them may mix train and val, but nothing else."""
+    live = df[df["split"] != "capped"]
+    by = live.groupby("cluster_id")["split"]
+    own = df["source"].isin(set(df.loc[df["holdout"].notna(), "source"])) & df["holdout"].isna()
+    timed = by.size().index.isin(set(df.loc[own, "cluster_id"]))
+    has_train = live["split"].eq("train").groupby(live["cluster_id"]).any()
+    beyond_val = (~live["split"].isin(["train", "val_a", "val_b"])).groupby(live["cluster_id"]).any()
+    return by.size().index[np.where(timed, beyond_val, has_train & (by.nunique() > 1))].tolist()
+
+
+def main() -> int:
+    cfg = config()
+    df = assign_splits(pd.read_parquet(work("corpus.parquet")), cfg["split"], int(cfg["seed"]))
     out = work("corpus_split.parquet")
     df.to_parquet(out, index=False)
     summary = df.groupby(["split", "label"]).size().unstack(fill_value=0)
     print(summary.to_string())
-    print(df[df["split"].isin(["train", "test"])].groupby(["split", "source", "label"]).size().unstack(fill_value=0).to_string())
-    # Sanity: no cluster in two evaluation-relevant splits.
-    multi = df[df["split"] != "capped"].groupby("cluster_id")["split"].nunique()
-    leaking = multi[multi > 1]
-    leaking = [c for c in leaking.index if set(df.loc[df["cluster_id"] == c, "split"]) - {"capped", "train"}
-               and "train" in set(df.loc[df["cluster_id"] == c, "split"])]
+    print(df.groupby(["source", "split", "label"]).size().unstack(fill_value=0).to_string())
+    # Sanity: no training row's cluster in an evaluation split.
+    leaking = leaking_clusters(df)
     if leaking:
         print(f"ERROR: {len(leaking)} clusters span train and an evaluation split", file=sys.stderr)
         return 1

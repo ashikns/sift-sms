@@ -78,6 +78,12 @@ interface MessageDao {
 
     @Query(
         "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
+            "WHERE m.type = 1 AND c.userLabel IS NULL ORDER BY m.date DESC, m.id DESC",
+    )
+    suspend fun unlabeledIncomingIds(): List<Long>
+
+    @Query(
+        "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
             "WHERE m.type = 1 AND m.date >= :since AND (c.messageId IS NULL OR c.state = 0) " +
             "ORDER BY m.date DESC, m.id DESC LIMIT :limit",
     )
@@ -134,6 +140,9 @@ interface MessageDao {
 
     @Query("SELECT DISTINCT senderKey FROM messages WHERE senderKind = 'PHONE'")
     suspend fun phoneSenderKeys(): List<String>
+
+    @Query("SELECT DISTINCT senderKey FROM messages WHERE type = 1")
+    suspend fun incomingSenderKeys(): List<String>
 
     @Query("SELECT threadId FROM messages WHERE senderKey = :senderKey ORDER BY date DESC LIMIT 1")
     suspend fun threadForSender(senderKey: String): Long?

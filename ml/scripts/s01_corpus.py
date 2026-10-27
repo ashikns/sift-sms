@@ -3,8 +3,11 @@
     uv run python -I scripts/s01_corpus.py
 
 Writes data/work/corpus.parquet with norm_v1 columns (clean/enc/ng) and a cluster_id. Clusters come from MinHash
-LSH over character 5-gram shingles of `ng` (Jaccard ≥ 0.7), merged with NCSU campaign IDs, so near-duplicates and
-campaign siblings never straddle splits. A cluster holding both labels is split into one cluster per label.
+LSH over character 5-gram shingles of `ng` (Jaccard ≥ 0.7), merged with campaign IDs (NCSU campaigns, inbox
+templates), so near-duplicates and campaign siblings never straddle splits. A cluster holding both labels is split
+into one cluster per label. Holdout rows (schema `holdout`: the inbox's newest half) are kept as received, repeats
+included, and clustered only among themselves (`h` cluster ids), so they never drop, merge or regroup another row.
+Fails when the private inbox export is missing.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
+import pandas as pd
 from datasketch import MinHash, MinHashLSH
 
 from smsml.pipeline import WORKERS, config, normalize_frame, work
@@ -55,30 +59,20 @@ class UnionFind:
             self.p[max(ra, rb)] = min(ra, rb)
 
 
-def main() -> int:
-    global _PERM, _K
-    cfg = config()
-    _PERM, _K = int(cfg["dedupe"]["num_perm"]), int(cfg["dedupe"]["shingle"])
-    jac = float(cfg["dedupe"]["jaccard"])
+def dedupe(df: pd.DataFrame) -> pd.DataFrame:
+    """Exact duplicates on the n-gram view, keeping the first; a view seen with both labels loses every row."""
+    key = pd.Series([hashlib.sha1(s.encode("utf-8")).hexdigest() for s in df["ng"]], index=df.index)
+    labels_per_key = df["label"].groupby(key).nunique()
+    conflicting = key.isin(labels_per_key.index[labels_per_key > 1])
+    repeat = key.duplicated() & ~conflicting
+    print(f"exact duplicates removed: {int(repeat.sum())}; rows with conflicting labels dropped: {int(conflicting.sum())}")
+    return df[~conflicting & ~repeat].reset_index(drop=True)
 
-    df = load_all()
-    print("loaded:", df.groupby(["source", "label"]).size().to_dict())
-    df = normalize_frame(df)
-    empty = df["clean"].str.len() == 0
-    print(f"dropping {int(empty.sum())} rows that normalize to empty text")
-    df = df[~empty].reset_index(drop=True)
 
-    # Exact duplicates on the n-gram view; conflicting labels are dropped entirely.
-    df["dedupe_key"] = [hashlib.sha1(s.encode("utf-8")).hexdigest() for s in df["ng"]]
-    labels_per_key = df.groupby("dedupe_key")["label"].nunique()
-    conflicting = set(labels_per_key[labels_per_key > 1].index)
-    n_conf = int(df["dedupe_key"].isin(conflicting).sum())
-    df = df[~df["dedupe_key"].isin(conflicting)]
-    before = len(df)
-    df = df.drop_duplicates("dedupe_key", keep="first").reset_index(drop=True)
-    print(f"exact duplicates removed: {before - len(df)}; rows with conflicting labels dropped: {n_conf}")
-
-    # Near-duplicate clusters.
+def clusters(df: pd.DataFrame, jac: float, prefix: str) -> list[str]:
+    """Cluster ids `<prefix><root>-<label>`: near-duplicates merged with campaign siblings, one cluster per label."""
+    if df.empty:
+        return []
     with ProcessPoolExecutor(WORKERS) as ex:
         hv = list(ex.map(_minhash, df["ng"].tolist(), chunksize=512))
     lsh = MinHashLSH(threshold=jac, num_perm=_PERM)
@@ -94,25 +88,49 @@ def main() -> int:
             if j > i and m.jaccard(mhs[j]) >= jac:
                 uf.union(i, j)
                 pairs += 1
-    camp = df["campaign_id"].fillna("")
     first_of: dict[str, int] = {}
-    for i, c in enumerate(camp):
+    for i, c in enumerate(df["campaign_id"].fillna("")):
         if c:
             if c in first_of:
                 uf.union(first_of[c], i)
             else:
                 first_of[c] = i
     roots = np.array([uf.find(i) for i in range(len(df))])
-    # Split label-mixed clusters per label.
-    df["cluster_id"] = [f"c{r}-{lab}" for r, lab in zip(roots, df["label"])]
+    ids = [f"{prefix}{r}-{lab}" for r, lab in zip(roots, df["label"])]
     mixed = df.groupby(roots)["label"].nunique()
-    print(f"near-duplicate pairs: {pairs}; clusters: {df['cluster_id'].nunique()} "
+    print(f"[{prefix}] near-duplicate pairs: {pairs}; clusters: {len(set(ids))} "
           f"(label-mixed roots split: {int((mixed > 1).sum())})")
-    sizes = Counter(df["cluster_id"])
-    print("largest clusters:", sizes.most_common(5))
+    return ids
+
+
+def build(df: pd.DataFrame, jac: float) -> pd.DataFrame:
+    """Normalized rows → the corpus: empty texts dropped, the rest deduplicated and clustered, holdout rows apart."""
+    empty = df["clean"].str.len() == 0
+    print(f"dropping {int(empty.sum())} rows that normalize to empty text")
+    df = df[~empty]
+    held = df["holdout"].notna()
+    pool, hold = dedupe(df[~held]), df[held]
+    out = pd.concat([pool, hold], ignore_index=True)
+    out["cluster_id"] = clusters(pool, jac, "c") + clusters(hold, jac, "h")
+    return out
+
+
+def main() -> int:
+    global _PERM, _K
+    cfg = config()
+    _PERM, _K = int(cfg["dedupe"]["num_perm"]), int(cfg["dedupe"]["shingle"])
+    try:
+        df = load_all()
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    print("loaded:", df.groupby(["source", "label"]).size().to_dict())
+    df = build(normalize_frame(df), float(cfg["dedupe"]["jaccard"]))
+    print("largest clusters:", Counter(df["cluster_id"]).most_common(5))
     out = work("corpus.parquet")
-    df.drop(columns=["dedupe_key"]).to_parquet(out, index=False)
+    df.to_parquet(out, index=False)
     print(f"wrote {out} ({len(df)} rows):", df.groupby(["source", "label"]).size().to_dict())
+    print("of which held out:", df.groupby(["holdout", "label"]).size().to_dict())
     return 0
 
 

@@ -13,12 +13,14 @@ import dev.ashik.sift.data.db.Source
 import dev.ashik.sift.data.db.UserLabelCode
 import dev.ashik.sift.data.repo.ConversationProjector
 import dev.ashik.sift.notifications.MessageNotifier
+import dev.ashik.sift.spam.work.WorkScheduler
 import dev.ashik.sift.spamcore.Reason
 import dev.ashik.sift.spamcore.SenderKind
 import dev.ashik.sift.spamcore.SpamEngine
 import dev.ashik.sift.spamcore.TrainingExample
 import dev.ashik.sift.spamcore.UserLabel
 import dev.ashik.sift.spamcore.Verdict
+import dev.ashik.sift.spamcore.features.Features
 import dev.ashik.sift.telephony.AddressNormalizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -45,23 +47,22 @@ class RescoreService(
     val lock = Mutex()
 
     /**
-     * Right after an explicit mark: re-scores the recent window (and the sender's other messages) by content, so
-     * near-duplicates of the marked message move with it and the snackbar can count them.
+     * Right after an explicit mark: re-scores the recent window and the sender's other messages (every route of a DLT
+     * sender: `AX-ICICIT-S` and `JD-ICICIT-T` are one sender) by content, so near-duplicates of the marked message move
+     * with it and the snackbar can count them.
      */
     suspend fun afterFeedback(batchId: Long, marked: List<MessageEntity>): Outcome {
         val markedIds = marked.map { it.id }.toSet()
-        val senderKeys = marked.map { it.senderKey }.distinct()
+        val sids = marked.mapNotNull { Features.senderId(it.senderKey) }.toSet()
+        val senderKeys = db.messages().incomingSenderKeys().filter { Features.senderId(it) in sids }
         val sameSender = db.messages().unlabeledIncomingFrom(senderKeys, 200)
         val recent = db.messages().recentUnlabeledIncoming(System.currentTimeMillis() - WINDOW_MS, 200)
         val candidates = (sameSender + recent).distinctBy { it.id }.filter { it.id !in markedIds }
         return rescore(candidates, batchId)
     }
 
-    /** After a retrain finished (or on demand): the full recent window, no undo records. */
-    suspend fun afterRetrain(): Outcome {
-        val candidates = db.messages().recentUnlabeledIncoming(System.currentTimeMillis() - WINDOW_MS, 2000)
-        return rescore(candidates, batchId = null)
-    }
+    /** After a retrain: re-scores these messages (RecheckWorker goes through all of history in chunks), no undo records. */
+    suspend fun afterRetrain(messageIds: List<Long>): Outcome = rescore(db.messages().getAll(messageIds), batchId = null)
 
     private suspend fun rescore(candidates: List<MessageEntity>, batchId: Long?): Outcome = lock.withLock {
         val updates = ArrayList<ClassificationEntity>()
@@ -143,6 +144,7 @@ class FeedbackService(
     private val projector: ConversationProjector,
     private val notifier: MessageNotifier,
     private val normalizer: AddressNormalizer,
+    private val scheduler: WorkScheduler,
     private val appScope: CoroutineScope,
 ) {
     data class Result(val batchId: Long, val label: UserLabel, val marked: Int, val moved: Int)
@@ -176,7 +178,7 @@ class FeedbackService(
         engine.learn(messages.map { example(it, label, now) })
         if (label == UserLabel.SPAM) messages.map { it.threadId }.distinct().forEach(notifier::cancelThread)
         val outcome = rescore.afterFeedback(batchId, messages)
-        scheduleRetrainRescore()
+        recheckAfterRetrain()
         return Result(batchId, label, messages.size, outcome.moved)
     }
 
@@ -207,17 +209,17 @@ class FeedbackService(
                 byId[e.messageId]?.let { example(it, UserLabelCode.toUserLabel(e.prevUserLabel!!), now) }
             })
         }
-        scheduleRetrainRescore()
+        recheckAfterRetrain()
     }
 
     /**
-     * Deletes learning entries. The engine forgets them (its near-duplicate memory at once) and retrains, then recent
-     * messages are re-scored, as after an Undo. The messages keep the user's labels: only the learning goes.
+     * Deletes learning entries. The engine forgets them (its near-duplicate memory at once) and retrains, then every
+     * message is re-checked, as after an Undo. The messages keep the user's labels: only the learning goes.
      */
     suspend fun forgetLearned(messageIds: Collection<Long>) {
         if (messageIds.isEmpty()) return
         engine.forget(messageIds)
-        scheduleRetrainRescore()
+        recheckAfterRetrain()
     }
 
     private suspend fun example(m: MessageEntity, label: UserLabel, now: Long): TrainingExample {
@@ -235,10 +237,10 @@ class FeedbackService(
         )
     }
 
-    private fun scheduleRetrainRescore() {
+    private fun recheckAfterRetrain() {
         appScope.launch {
             engine.awaitIdle()
-            rescore.afterRetrain()
+            scheduler.enqueueRecheck()
         }
     }
 }

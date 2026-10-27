@@ -3,7 +3,9 @@
     uv run python -I scripts/s08_simulate.py [--quick]
 
 Streams (validation clusters + modern dev messages, ~25% spam, campaigns arriving in bursts, ham from a set of
-repeat senders) are replayed against simulated users:
+repeat senders) are replayed against simulated users. A message whose source records its sender keeps that sender
+(its sid) and its sender × content (SND) vector; the others get a simulated sender for the memory's same-sender rule
+and no SND vector, so for them the snd prior is a no-op.
   diligent   marks every missed spam; finds a false positive in the spam folder with probability 0.3
   spam_only  only ever marks missed spam (the drift scenario)
   noisy      like diligent, but 5% of marks are wrong
@@ -35,9 +37,10 @@ import pandas as pd
 import scipy.sparse as sp
 
 from smsml.decide import SPAM, Thresholds, decide
-from smsml.features import META_NAMES
+from smsml.features import META_NAMES, sender_id
 from smsml.head import Example, Head, Priors, Weighting, example_weights, personalize
-from smsml.pipeline import BUNDLE_WORK, WORKERS, config, featurize, load_modern_eval, work, write_json
+from smsml.pipeline import (BUNDLE_WORK, WORKERS, config, featurize, load_modern_eval, sender_key, senders_of, work,
+                            write_json)
 
 FROZEN = 1e6  # a prior this strong keeps a block at its base weights
 PERSONAL = {"personal", "first_contact"}
@@ -53,7 +56,10 @@ class Msg:
     meta: np.ndarray
     idx: np.ndarray
     val: np.ndarray
-    sender: str
+    snd_idx: np.ndarray
+    snd_val: np.ndarray
+    sid: str | None  # the message's own sender, when its source records one
+    sender: str  # who sends it in the stream: the sid, else a simulated sender
     cluster: str
     text: str = ""
 
@@ -81,12 +87,14 @@ def build_stream(seed: int, pool: list[Msg], n: int = 2400, spam_frac: float = 0
             sender = friends[rng.choice(60, p=zipf)]
         else:
             sender = f"camp-{m.cluster}" if rng.random() < 0.3 else f"spam-{rng.integers(1 << 40)}"
-        out.append(Msg(m.y, m.emb, m.meta, m.idx, m.val, sender, m.cluster, m.text))
+        out.append(Msg(m.y, m.emb, m.meta, m.idx, m.val, m.snd_idx, m.snd_val, m.sid, m.sid or sender, m.cluster,
+                       m.text))
     return out
 
 
 class Memory:
-    """Vectorized near-duplicate memory with the same rules as spamcore's LabeledMemory."""
+    """Vectorized near-duplicate memory with the same rules as spamcore's LabeledMemory (a sender is a sid, or a
+    simulated one)."""
 
     def __init__(self, tau_spam: float, tau_ham: float):
         self.tau_spam, self.tau_ham = tau_spam, tau_ham
@@ -126,7 +134,15 @@ class Memory:
 
 
 def z_of(head: Head, m: Msg) -> float:
-    return head.z(m.emb, m.meta, m.idx, m.val)
+    return head.z(m.emb, m.meta, m.idx, m.val, m.snd_idx, m.snd_val)
+
+
+def priors_of(params: dict) -> Priors:
+    return Priors(params["embed"], params["meta"], params["hash"], params["snd"])
+
+
+def example_of(m: Msg, label: int, key: int) -> Example:
+    return Example(m.emb, m.meta, m.idx, m.val, m.snd_idx, m.snd_val, label, key=key)
 
 
 def probe_fpr(head: Head, probes: list[Msg], t: float) -> float:
@@ -136,7 +152,7 @@ def probe_fpr(head: Head, probes: list[Msg], t: float) -> float:
 def simulate(args) -> dict:
     (cfg_key, params, user, seed, stream, probes, base, thr) = args
     rng = np.random.default_rng(seed + 7)
-    priors = Priors(params["embed"], params["meta"], params["hash"])
+    priors = priors_of(params)
     weighting = Weighting(ham=params["ham"])
     mem = Memory(params["tau_spam"], 0.90)
     head, examples = base, []
@@ -169,7 +185,7 @@ def simulate(args) -> dict:
             mark = 1 - mark
         if mark is None:
             continue
-        examples.append(Example(m.emb, m.meta, m.idx, m.val, mark, key=k))
+        examples.append(example_of(m, mark, k))
         mem.add(m.idx, m.val, mark, m.sender)
         marks += 1
         head = personalize(base, examples, example_weights(examples, weighting), priors, tol=1e-6, max_iter=200)
@@ -184,7 +200,7 @@ def missed_campaign(args) -> tuple[int, int, int, int]:
     """One campaign the base model misses, replayed alone: the user marks every miss. Returns (later messages,
     caught with learning, caught by the base model, marks)."""
     msgs, params, base, thr = args
-    priors = Priors(params["embed"], params["meta"], params["hash"])
+    priors = priors_of(params)
     weighting = Weighting(ham=params["ham"])
     mem = Memory(params["tau_spam"], 0.90)
     head, examples, marks, later, caught, caught_base = base, [], 0, 0, 0, 0
@@ -198,7 +214,7 @@ def missed_campaign(args) -> tuple[int, int, int, int]:
             caught += label == SPAM
             caught_base += base_label == SPAM
         if label != SPAM:
-            examples.append(Example(m.emb, m.meta, m.idx, m.val, 1, key=k))
+            examples.append(example_of(m, 1, k))
             mem.add(m.idx, m.val, 1, m.sender)
             marks += 1
             head = personalize(base, examples, example_weights(examples, weighting), priors, tol=1e-6, max_iter=200)
@@ -209,7 +225,7 @@ def variant_campaign(args) -> tuple[int, int, int]:
     """A message the base model gets wrong plus its variants, as one sender campaign. The user corrects every
     mistake. Returns (variants, right with learning, right with the base model)."""
     msgs, params, base, thr = args
-    priors = Priors(params["embed"], params["meta"], params["hash"])
+    priors = priors_of(params)
     weighting = Weighting(ham=params["ham"])
     mem = Memory(params["tau_spam"], 0.90)
     head, examples, n, right, right_base = base, [], 0, 0, 0
@@ -223,7 +239,7 @@ def variant_campaign(args) -> tuple[int, int, int]:
             right += (label == SPAM) == (m.y == 1)
             right_base += (base_label == SPAM) == (m.y == 1)
         if (label == SPAM) != (m.y == 1):
-            examples.append(Example(m.emb, m.meta, m.idx, m.val, m.y, key=k))
+            examples.append(example_of(m, m.y, k))
             mem.add(m.idx, m.val, m.y, m.sender)
             head = personalize(base, examples, example_weights(examples, weighting), priors, tol=1e-6, max_iter=200)
     return n, right, right_base
@@ -231,7 +247,9 @@ def variant_campaign(args) -> tuple[int, int, int]:
 
 def variant_scenarios(pool, params, base, thr, n_variants: int = 4, cap: int = 300) -> dict:
     """Repeats the user would notice: scams resent with new names/amounts/links from new numbers, and a legit
-    sender's recurring notices. Variants come from smsml.augment and are embedded with the int8 encoder."""
+    sender's recurring notices. Variants come from smsml.augment and are embedded with the int8 encoder. A recurring
+    notice keeps the seed's sender (and so its SND vector, when the seed has one); a new number has no learned sender
+    weights, so a resent scam's variants have no SND vector."""
     import random
 
     import onnxruntime as ort
@@ -256,17 +274,21 @@ def variant_scenarios(pool, params, base, thr, n_variants: int = 4, cap: int = 3
         if not flat:
             out[name] = {"seeds": 0}
             continue
-        X, meta = featurize(flat, base.idf)
+        # A sid is its own sender key, so featurize maps it back to the same sid.
+        senders = [m.sid if same_sender else None for m in seeds for _ in range(n_variants)]
+        X, S, meta = featurize(flat, base.idf, senders)
         embs = []
         for t in flat:
             ids = np.asarray([wp.encode(normalize(t).enc)], dtype=np.int64)
             embs.append(sess.run(["embedding"], {"input_ids": ids, "attention_mask": np.ones_like(ids)})[0][0])
         jobs, j = [], 0
         for c, m in enumerate(seeds):
-            camp = [Msg(m.y, m.emb, m.meta, m.idx, m.val, f"s{c}", f"v{c}", m.text)]
+            own = m.sid or f"s{c}"
+            camp = [Msg(m.y, m.emb, m.meta, m.idx, m.val, m.snd_idx, m.snd_val, m.sid, own, f"v{c}", m.text)]
             for _ in range(n_variants):
-                sender = f"s{c}" if same_sender else f"n{c}-{j}"
-                camp.append(Msg(m.y, embs[j], meta[j], X[j].indices, X[j].data, sender, f"v{c}", flat[j]))
+                sid, sender = (m.sid, own) if same_sender else (None, f"n{c}-{j}")
+                camp.append(Msg(m.y, embs[j], meta[j], X[j].indices, X[j].data, S[j].indices, S[j].data, sid, sender,
+                                f"v{c}", flat[j]))
                 j += 1
             jobs.append((camp, params, base, thr))
         with ProcessPoolExecutor(WORKERS) as ex:
@@ -364,25 +386,31 @@ def main() -> int:
     rows = np.load(work("emb_corpus_rows.npy"))
     emb = np.load(work("emb_corpus.npy"))
     X = sp.load_npz(work("features_X.npz"))
+    S = sp.load_npz(work("features_S.npz"))
     meta = np.load(work("features_meta.npy"))
     sub = df.iloc[rows].reset_index(drop=True)
-    pool_mask = sub["split"].isin(["val_a", "val_b"]).to_numpy()
+    sids = [sender_id(sender_key(s)) for s in senders_of(sub)]
+    # Noisy labels would make even a diligent simulated user mark wrongly.
+    pool_mask = (sub["split"].isin(["val_a", "val_b"]) & ~sub["source"].isin(cfg["noisy_sources"])).to_numpy()
     if args.traffic == "transactional":
-        personal = (sub["label"] == 0) & (sub["source"].isin(["uci", "mishra"]) | sub["category"].isin(PERSONAL))
+        chat = sub["source"].isin(["uci", "mishra", "iiitd_smsassassin"]) | ((sub["source"] == "cube_sms77k") & (sub["sender_type"] == "PHONE"))
+        personal = (sub["label"] == 0) & (chat | sub["category"].isin(PERSONAL))
         pool_mask = pool_mask & ~personal.to_numpy()
-    pool = [Msg(int(sub["label"][i]), emb[i], meta[i], X[i].indices, X[i].data, "", str(sub["cluster_id"][i]),
-                str(sub["text"][i])) for i in np.flatnonzero(pool_mask)]
+    pool = [Msg(int(sub["label"][i]), emb[i], meta[i], X[i].indices, X[i].data, S[i].indices, S[i].data, sids[i], "",
+                str(sub["cluster_id"][i]), str(sub["text"][i])) for i in np.flatnonzero(pool_mask)]
     modern = load_modern_eval()
     dev = modern["split"] == "dev"
     em = np.load(work("emb_modern.npy"))
-    Xm, mm = featurize(modern.loc[dev, "text"].tolist(), base.idf)
+    modern_senders = senders_of(modern[dev])
+    Xm, Sm, mm = featurize(modern.loc[dev, "text"].tolist(), base.idf, modern_senders)
     for j, (i, row) in enumerate(modern[dev].iterrows()):
         if args.traffic == "transactional" and row["label"] == 0 and row["category"] in PERSONAL:
             continue
         mj = mm[j].copy()
         if row["sender_type"] in KIND:
             mj[KIND[row["sender_type"]]] = 1.0
-        pool.append(Msg(int(row["label"]), em[i], mj, Xm[j].indices, Xm[j].data, "", f"modern-{i}", row["text"]))
+        pool.append(Msg(int(row["label"]), em[i], mj, Xm[j].indices, Xm[j].data, Sm[j].indices, Sm[j].data,
+                        sender_id(sender_key(modern_senders[j])), "", f"modern-{i}", row["text"]))
     rng = np.random.default_rng(int(cfg["seed"]))
     hams = [m for m in pool if m.y == 0]
     probe_idx = rng.choice(len(hams), size=min(260, len(hams) // 4), replace=False)  # drift measurement only
@@ -395,20 +423,20 @@ def main() -> int:
         return confirm(pool, probes, base, thr, override=args.override, write=not args.no_write)
     # FROZEN as a prior strength pins a block at its base weights. Learning the dense blocks (embedding, message
     # features) from a few mostly-spam marks shifts every message's score; the sparse n-gram weights only touch
-    # messages that share the marked messages' n-grams.
+    # messages that share the marked messages' n-grams, and the SND weights only those that also share their sender.
     if args.quick:
-        grid = {"embed": [FROZEN], "meta": [FROZEN], "hash": [pc["priors"]["hash"]], "ham": [1.0],
-                "tau_spam": [0.85]}
+        grid = {"embed": [FROZEN], "meta": [FROZEN], "hash": [pc["priors"]["hash"]], "snd": [pc["priors"]["snd"]],
+                "ham": [1.0], "tau_spam": [0.85]}
         seeds = [1]
     else:
-        grid = {"embed": [1.0, FROZEN], "meta": [4.0, FROZEN], "hash": [0.15, 0.25, 0.5, 1.0], "ham": [1.0],
-                "tau_spam": [0.80, 0.90]}
+        grid = {"embed": [1.0, FROZEN], "meta": [4.0, FROZEN], "hash": [0.15, 0.25, 0.5, 1.0],
+                "snd": [0.1, 0.5, FROZEN], "ham": [1.0], "tau_spam": [0.80, 0.90]}
         seeds = [1, 2, 3]
     streams = {s: build_stream(s, pool) for s in seeds}
     jobs = []
     configs = []
-    for emb_p, meta_p, h, ham, tau in itertools.product(*grid.values()):
-        params = {"embed": emb_p, "meta": meta_p, "hash": h, "ham": ham, "tau_spam": tau}
+    for emb_p, meta_p, h, snd, ham, tau in itertools.product(*grid.values()):
+        params = {"embed": emb_p, "meta": meta_p, "hash": h, "snd": snd, "ham": ham, "tau_spam": tau}
         key = json.dumps(params, sort_keys=True)
         configs.append((key, params))
         for user in ("diligent", "spam_only", "noisy"):

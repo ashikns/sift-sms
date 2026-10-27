@@ -50,36 +50,53 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.coroutineContext
 
-/** Turns message text + sender facts into model inputs (norm_v1 → tok_v1 + feat_v1). */
+/** Turns message text + sender facts into model inputs (norm_v1 → tok_v1 + feat_v2). */
 class Featurizer(private val bundle: ModelBundle) {
-    class Prepared(val normalized: Normalized, val ids: LongArray, val sparse: SparseVector, val meta: FloatArray) {
+    class Prepared(
+        val normalized: Normalized,
+        val ids: LongArray,
+        val sparse: SparseVector,
+        val meta: FloatArray,
+        /** The sender's identity (ml/SPEC.md sid), or null. */
+        val sid: String?,
+        /** The sender × content vector: the sid paired with the message's words and link domains. */
+        val snd: SparseVector,
+    ) {
         val domains: Set<String> = normalized.urls.mapTo(HashSet()) { it.domain }
         val otpWithoutLink: Boolean get() = meta[OTP_INDEX] == 1f && normalized.urls.isEmpty()
     }
 
-    fun prepare(body: String, sender: SenderFeatures): Prepared {
+    fun prepare(body: String, sender: SenderInfo): Prepared {
         val n = bundle.normalizer.normalize(body)
-        return Prepared(n, bundle.tokenizer.encode(n.enc), Features.sparse(n, bundle.baseHead.idf), Features.metadata(n, sender))
+        val sid = Features.senderId(sender.key)
+        return Prepared(
+            normalized = n,
+            ids = bundle.tokenizer.encode(n.enc),
+            sparse = Features.sparse(n, bundle.baseHead.idf),
+            meta = Features.metadata(n, senderFeatures(sender)),
+            sid = sid,
+            snd = Features.snd(sid, n),
+        )
     }
 
-    /** Bucket index → the feature strings that hashed there, for explanations. */
-    fun stringsByIndex(n: Normalized): Map<Int, List<String>> {
+    /** Bucket index → the feature strings of both sparse vectors that hashed there, for explanations. */
+    fun stringsByIndex(n: Normalized, sid: String?): Map<Int, List<String>> {
         val out = HashMap<Int, MutableList<String>>()
-        for (family in Features.featureStrings(n)) for (f in family) out.getOrPut(Features.hashFeature(f).first) { ArrayList(1) }.add(f)
+        fun add(f: String) = out.getOrPut(Features.hashFeature(f).first) { ArrayList(1) }.add(f)
+        for (family in Features.featureStrings(n)) family.forEach(::add)
+        Features.sndStrings(sid, n).forEach(::add)
         return out
     }
 
-    companion object {
-        private val OTP_INDEX = Features.META_NAMES.indexOf("otp_pattern")
+    private companion object {
+        val OTP_INDEX = Features.META_NAMES.indexOf("otp_pattern")
 
-        fun senderFeatures(kind: SenderKind, key: String, international: Boolean, firstContact: Boolean) = SenderFeatures(
-            kind = kind,
-            nanp = kind == SenderKind.PHONE && key.startsWith("+1") && key.length == 12,
-            international = international,
-            firstContact = firstContact,
+        fun senderFeatures(s: SenderInfo) = SenderFeatures(
+            kind = s.kind,
+            nanp = s.kind == SenderKind.PHONE && s.key.startsWith("+1") && s.key.length == 12,
+            international = s.international,
+            firstContact = s.firstContact,
         )
-
-        fun senderFeatures(s: SenderInfo) = senderFeatures(s.kind, s.key, s.international, s.firstContact)
     }
 }
 
@@ -192,7 +209,7 @@ class ModelSpamEngine(
     private suspend fun classifyInternal(input: SmsInput, policy: DecisionPolicy, cached: FloatArray?): Scored {
         val l = ensureLoaded() ?: return Scored(Verdict(SpamLabel.HAM, Float.NaN, Reason.UNAVAILABLE), cached)
         val s = state.get()!!
-        val prep = l.featurizer.prepare(input.body, Featurizer.senderFeatures(input.sender))
+        val prep = l.featurizer.prepare(input.body, input.sender)
         val embedding = cached?.takeIf { it.size == LinearHead.EMBED_DIM } ?: l.encoder?.let { enc ->
             try {
                 enc.embed(prep.ids)
@@ -202,13 +219,18 @@ class ModelSpamEngine(
             }
         }
         val fallback = embedding == null
-        val z = if (fallback) s.head.zFallback(prep.meta, prep.sparse) else s.head.z(embedding, prep.meta, prep.sparse)
+        val z = if (fallback) {
+            s.head.zFallback(prep.meta, prep.sparse, prep.snd)
+        } else {
+            s.head.z(embedding, prep.meta, prep.sparse, prep.snd)
+        }
         val p = LinearHead.sigmoid(z)
-        val match = s.memory.match(prep.sparse, input.sender.key, prep.domains)
+        val match = s.memory.match(prep.sparse, prep.sid, prep.domains)
         val (label, reason) = SpamDecider.memoryRule(match)
             ?: SpamDecider.modelRule(p, if (fallback) l.fallback else l.full, policy, fallback, prep.otpWithoutLink)
         val cues = if (label != SpamLabel.HAM) {
-            s.head.explain(embedding, prep.meta, prep.sparse, l.featurizer.stringsByIndex(prep.normalized))
+            val strings = l.featurizer.stringsByIndex(prep.normalized, prep.sid)
+            s.head.explain(embedding, prep.meta, prep.sparse, prep.snd, strings)
         } else {
             emptyList()
         }
@@ -295,7 +317,7 @@ class ModelSpamEngine(
     }
 
     private fun prepare(l: Loaded, ex: TrainingExample, useStoredEmbedding: Boolean = true): PreparedExample {
-        val prep = l.featurizer.prepare(ex.body, Featurizer.senderFeatures(ex.senderKind, ex.senderKey, ex.international, ex.firstContact))
+        val prep = l.featurizer.prepare(ex.body, SenderInfo(ex.senderKey, ex.senderKind, ex.international, ex.firstContact))
         val emb = ex.embedding?.takeIf { useStoredEmbedding && it.size == LinearHead.EMBED_DIM }
             ?: l.encoder?.let { runCatching { it.embed(prep.ids) }.getOrNull() }
         return PreparedExample(
@@ -305,12 +327,13 @@ class ModelSpamEngine(
             embedding = emb,
             meta = prep.meta,
             sparse = prep.sparse,
-            senderKey = ex.senderKey,
+            snd = prep.snd,
+            sid = prep.sid,
             domains = prep.domains,
         )
     }
 
-    private fun PreparedExample.toEntry() = LabeledMemory.Entry(key, label, sparse, senderKey, domains)
+    private fun PreparedExample.toEntry() = LabeledMemory.Entry(key, label, sparse, sid, domains)
 
     private fun updateMemory(f: (LabeledMemory) -> LabeledMemory) {
         while (true) {
@@ -363,6 +386,7 @@ class ModelSpamEngine(
         stateDir.mkdirs()
         val base = bundle.baseHead
         val changed = (0 until Features.BUCKETS).filter { head.wHash[it] != base.wHash[it] }
+        val sndChanged = (0 until Features.BUCKETS).filter { head.wSnd[it] != base.wSnd[it] }
         val meta = PersonalMeta(bundle.config.bundleVersion, bundle.config.features.version, bundle.config.encoder.sha256, version, trainedAt, digest)
         HeadCodec.writeAtomic(
             personalFile,
@@ -372,6 +396,8 @@ class ModelSpamEngine(
                 "w_meta" to Block.F32(head.wMeta),
                 "hash_idx" to Block.I32(changed.toIntArray()),
                 "hash_val" to Block.F32(FloatArray(changed.size) { head.wHash[changed[it]] }),
+                "snd_idx" to Block.I32(sndChanged.toIntArray()),
+                "snd_val" to Block.F32(FloatArray(sndChanged.size) { head.wSnd[sndChanged[it]] }),
             ),
         )
     }
@@ -401,10 +427,21 @@ class ModelSpamEngine(
         val wMeta = (blocks["w_meta"] as? Block.F32)?.data ?: return null
         val idx = (blocks["hash_idx"] as? Block.I32)?.data ?: return null
         val vals = (blocks["hash_val"] as? Block.F32)?.data ?: return null
-        if (wEmbed.size != LinearHead.EMBED_DIM || wMeta.size != Features.N_META || idx.size != vals.size) return null
-        val wHash = bundle.baseHead.wHash.copyOf()
-        for (i in idx.indices) if (idx[i] in 0 until Features.BUCKETS) wHash[idx[i]] = vals[i]
-        return Triple(bundle.baseHead.copyWith(wEmbed = wEmbed, wMeta = wMeta, wHash = wHash), meta.version, meta.trainedAt)
+        val sndIdx = (blocks["snd_idx"] as? Block.I32)?.data ?: return null
+        val sndVals = (blocks["snd_val"] as? Block.F32)?.data ?: return null
+        if (wEmbed.size != LinearHead.EMBED_DIM || wMeta.size != Features.N_META) return null
+        if (idx.size != vals.size || sndIdx.size != sndVals.size) return null
+        val base = bundle.baseHead
+        fun patched(weights: FloatArray, at: IntArray, values: FloatArray) = weights.copyOf().also {
+            for (i in at.indices) if (at[i] in 0 until Features.BUCKETS) it[at[i]] = values[i]
+        }
+        val head = base.copyWith(
+            wEmbed = wEmbed,
+            wMeta = wMeta,
+            wHash = patched(base.wHash, idx, vals),
+            wSnd = patched(base.wSnd, sndIdx, sndVals),
+        )
+        return Triple(head, meta.version, meta.trainedAt)
     }
 
     private fun publishInfo() {

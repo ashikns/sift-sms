@@ -1,6 +1,6 @@
-"""A small, documented English-detection heuristic for sources without a language field.
+"""Small, documented language heuristics for sources without a language field.
 
-A message is English when
+is_english (NCSU): a message is English when
   1. at least `min_ascii_ratio` of its letter-bearing words contain an ASCII letter (mixed-script words such
      as homoglyph-obfuscated "Ηello" count as Latin, so obfuscated English spam isn't dropped), and
   2. it has at least `min_stopword_hits` hits from an English list (function words plus common SMS-scam content
@@ -9,9 +9,15 @@ A message is English when
 
 It is deliberately conservative toward short messages: a message with no function word in any language is
 treated as English only if it is mostly ASCII and has at most 4 words (e.g. "Verify now: bit.ly/x").
+
+script_language (inbox): the language of the script most of a message's letters are in. ASCII letters are English,
+an Indian script gives the language it most often writes (SCRIPTS), any other script None. A message without
+letters (an amount, a number) is English.
 """
 
 from __future__ import annotations
+
+from collections import Counter
 
 ENGLISH = frozenset("""
 a about after all am an and any are as at be been but by can could did do does dont for from get got had has
@@ -43,6 +49,19 @@ OTHER = {
     "pl": frozenset("i w na z do jest nie sie twoj twoja prosze".split()),
 }
 
+# Unicode blocks of the Indian scripts → the language each most often writes.
+SCRIPTS = (
+    (0x0900, 0x097F, "hi"),  # Devanagari
+    (0x0980, 0x09FF, "bn"),  # Bengali
+    (0x0A00, 0x0A7F, "pa"),  # Gurmukhi
+    (0x0A80, 0x0AFF, "gu"),  # Gujarati
+    (0x0B00, 0x0B7F, "or"),  # Oriya
+    (0x0B80, 0x0BFF, "ta"),  # Tamil
+    (0x0C00, 0x0C7F, "te"),  # Telugu
+    (0x0C80, 0x0CFF, "kn"),  # Kannada
+    (0x0D00, 0x0D7F, "ml"),  # Malayalam
+)
+
 
 def _words(text: str) -> list[str]:
     out, cur = [], []
@@ -71,3 +90,17 @@ def is_english(text: str, min_ascii_ratio: float = 0.9, min_stopword_hits: int =
     if en_hits == 0 and other_hits == 0:
         return len(words) <= 4
     return en_hits >= min_stopword_hits and en_hits > other_hits
+
+
+def script_language(text: str) -> str | None:
+    counts: Counter[str | None] = Counter()
+    for ch in text:
+        if ch.isascii():
+            if ch.isalpha():
+                counts["en"] += 1
+            continue
+        cp = ord(ch)
+        code = next((lang for lo, hi, lang in SCRIPTS if lo <= cp <= hi), None)
+        if code or ch.isalpha():  # an Indian block counts whole (its vowel signs aren't letters), elsewhere letters
+            counts[code] += 1
+    return counts.most_common(1)[0][0] if counts else "en"

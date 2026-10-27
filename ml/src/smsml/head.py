@@ -1,10 +1,12 @@
-"""The linear head (score_v1) and the on-device personalization objective, mirrored by spamcore.
+"""The linear head (score_v2) and the on-device personalization objective, mirrored by spamcore.
 
 Personalization is MAP logistic regression anchored to the base weights:
     minimize  Σ_i c_i · logloss(z_i, y_i)  +  ½ Σ_g λ_g ‖w_g − w_base,g‖²
-over the embedding block, the content metadata, and the hashed weights that occur in the examples (the "active
-set"). The bias and the sender-type features stay frozen, so marks only teach the model about message content. The problem is strictly convex, so any converged
-solver (scipy here, a hand-written L-BFGS in Kotlin) reaches the same optimum.
+over the embedding block, the content metadata, the hashed n-gram weights and the sender × content (SND) weights
+that occur in the examples (each sparse block's "active set"). The bias and the sender-type features stay frozen, so
+marks only teach the model about message content, and a sender only through its pairs with the message's words and
+link domains. The problem is strictly convex, so any converged solver (scipy here, a hand-written L-BFGS in Kotlin)
+reaches the same optimum.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ class Head:
     w_meta: np.ndarray
     mu_meta: np.ndarray
     w_hash: np.ndarray
+    w_snd: np.ndarray
     idf: np.ndarray
     fb_bias: float
     fb_scale: float
@@ -43,6 +46,7 @@ class Head:
             "w_meta": f32(self.w_meta),
             "mu_meta": f32(self.mu_meta),
             "w_hash": f32(self.w_hash),
+            "w_snd": f32(self.w_snd),
             "idf": f32(self.idf),
             "fb_bias": np.asarray([self.fb_bias], dtype=np.float64),
             "fb_scale": np.asarray([self.fb_scale], dtype=np.float64),
@@ -53,7 +57,7 @@ class Head:
     def from_blocks(b: dict[str, np.ndarray]) -> "Head":
         return Head(
             bias=float(b["bias"][0]), w_embed=b["w_embed"], mu_embed=b["mu_embed"], w_meta=b["w_meta"],
-            mu_meta=b["mu_meta"], w_hash=b["w_hash"], idf=b["idf"], fb_bias=float(b["fb_bias"][0]),
+            mu_meta=b["mu_meta"], w_hash=b["w_hash"], w_snd=b["w_snd"], idf=b["idf"], fb_bias=float(b["fb_bias"][0]),
             fb_scale=float(b["fb_scale"][0]), w_meta_fb=b["w_meta_fb"],
         )
 
@@ -64,19 +68,26 @@ class Head:
     def load(path) -> "Head":
         return Head.from_blocks(bundle.read(path))
 
-    def z(self, emb: np.ndarray | None, meta: np.ndarray, idx: np.ndarray, val: np.ndarray) -> float:
-        """score_v1 logit, accumulated in double in SPEC order. A missing embedding contributes 0 (its mean)."""
+    def z(self, emb: np.ndarray | None, meta: np.ndarray, idx: np.ndarray, val: np.ndarray, snd_idx: np.ndarray,
+          snd_val: np.ndarray) -> float:
+        """score_v2 logit, accumulated in double in SPEC order. A missing embedding contributes 0 (its mean)."""
         z = self.bias
         if emb is not None:
             z += float(np.dot(self.w_embed.astype(np.float64), emb.astype(np.float64) - self.mu_embed.astype(np.float64)))
         z += float(np.dot(self.w_meta.astype(np.float64), meta.astype(np.float64) - self.mu_meta.astype(np.float64)))
         z += float(np.dot(self.w_hash[idx].astype(np.float64), val.astype(np.float64)))
+        z += self.snd_term(snd_idx, snd_val)
         return z
 
-    def z_fallback(self, meta: np.ndarray, idx: np.ndarray, val: np.ndarray) -> float:
+    def z_fallback(self, meta: np.ndarray, idx: np.ndarray, val: np.ndarray, snd_idx: np.ndarray,
+                   snd_val: np.ndarray) -> float:
         z = self.fb_bias + self.fb_scale * float(np.dot(self.w_hash[idx].astype(np.float64), val.astype(np.float64)))
         z += float(np.dot(self.w_meta_fb.astype(np.float64), meta.astype(np.float64) - self.mu_meta.astype(np.float64)))
+        z += self.snd_term(snd_idx, snd_val)  # unscaled: the same SND term as the full head
         return z
+
+    def snd_term(self, snd_idx: np.ndarray, snd_val: np.ndarray) -> float:
+        return float(np.dot(self.w_snd[snd_idx].astype(np.float64), snd_val.astype(np.float64)))
 
 
 def sigmoid(z):
@@ -89,6 +100,8 @@ class Example:
     meta: np.ndarray
     idx: np.ndarray
     val: np.ndarray
+    snd_idx: np.ndarray
+    snd_val: np.ndarray
     label: int
     key: int = 0
 
@@ -101,6 +114,7 @@ class Priors:
     embed: float = 1.0
     meta: float = 4.0
     hash: float = 0.5
+    snd: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -150,25 +164,36 @@ def example_weights(examples: list[Example], w: Weighting) -> np.ndarray:
 
 def personalize(base: Head, examples: list[Example], weights: np.ndarray, priors: Priors,
                 tol: float = 1e-10, max_iter: int = 500) -> Head:
-    """Exact MAP optimum over the active set (scipy L-BFGS-B), used as the reference for the Kotlin trainer."""
+    """Exact MAP optimum over the active sets (scipy L-BFGS-B), used as the reference for the Kotlin trainer.
+
+    Parameters, in order: the embedding block, the metadata, the hashed n-gram weights of the examples' feature
+    vectors and the SND weights of their SND vectors. The two sparse blocks are separate even where they share a
+    bucket index.
+    """
     use = [i for i in range(len(examples)) if weights[i] > 0]
     if not use:
         return base
     active = np.unique(np.concatenate([examples[i].idx for i in use]).astype(np.int64))
+    snd_active = np.unique(np.concatenate([examples[i].snd_idx for i in use]).astype(np.int64))
     pos = {int(k): j for j, k in enumerate(active)}
+    snd_pos = {int(k): j for j, k in enumerate(snd_active)}
     d_e, d_m, d_h = EMBED_DIM, N_META, len(active)
+    o_h, o_s = d_e + d_m, d_e + d_m + d_h
     w0 = np.concatenate([
         base.w_embed.astype(np.float64), base.w_meta.astype(np.float64), base.w_hash[active].astype(np.float64),
+        base.w_snd[snd_active].astype(np.float64),
     ])
     lam = np.empty_like(w0)
     lam[:d_e] = priors.embed
-    lam[d_e:d_e + d_m] = priors.meta
-    lam[d_e + d_m:] = priors.hash
+    lam[d_e:o_h] = priors.meta
+    lam[o_h:o_s] = priors.hash
+    lam[o_s:] = priors.snd
     frozen = np.zeros_like(w0, dtype=bool)
     frozen[d_e + SENDER_SLICE.start:d_e + SENDER_SLICE.stop] = True
     frozen[:d_e] |= priors.embed >= FROZEN
-    frozen[d_e:d_e + d_m] |= priors.meta >= FROZEN
-    frozen[d_e + d_m:] |= priors.hash >= FROZEN
+    frozen[d_e:o_h] |= priors.meta >= FROZEN
+    frozen[o_h:o_s] |= priors.hash >= FROZEN
+    frozen[o_s:] |= priors.snd >= FROZEN
     mu_e = base.mu_embed.astype(np.float64)
     mu_m = base.mu_meta.astype(np.float64)
     rows_e = np.stack([
@@ -177,12 +202,15 @@ def personalize(base: Head, examples: list[Example], weights: np.ndarray, priors
     rows_m = np.stack([examples[i].meta.astype(np.float64) - mu_m for i in use])
     hash_rows = [(np.array([pos[int(k)] for k in examples[i].idx], dtype=np.int64),
                   examples[i].val.astype(np.float64)) for i in use]
+    snd_rows = [(np.array([snd_pos[int(k)] for k in examples[i].snd_idx], dtype=np.int64),
+                 examples[i].snd_val.astype(np.float64)) for i in use]
     y = np.array([examples[i].label for i in use], dtype=np.float64)
     c = np.array([weights[i] for i in use], dtype=np.float64)
 
     def f(theta: np.ndarray):
-        we, wm, wh = theta[:d_e], theta[d_e:d_e + d_m], theta[d_e + d_m:]
-        z = base.bias + rows_e @ we + rows_m @ wm + np.array([wh[p] @ v for p, v in hash_rows])
+        we, wm, wh, ws = theta[:d_e], theta[d_e:o_h], theta[o_h:o_s], theta[o_s:]
+        z = base.bias + rows_e @ we + rows_m @ wm + np.array([wh[p] @ v for p, v in hash_rows]) \
+            + np.array([ws[p] @ v for p, v in snd_rows])
         # logloss = log(1 + e^z) - y z, computed stably
         loss = float(np.sum(c * (np.logaddexp(0.0, z) - y * z)))
         diff = theta - w0
@@ -190,11 +218,15 @@ def personalize(base: Head, examples: list[Example], weights: np.ndarray, priors
         r = c * (sigmoid(z) - y)
         g = np.empty_like(theta)
         g[:d_e] = rows_e.T @ r
-        g[d_e:d_e + d_m] = rows_m.T @ r
+        g[d_e:o_h] = rows_m.T @ r
         gh = np.zeros(d_h)
         for (p, v), ri in zip(hash_rows, r):
             np.add.at(gh, p, ri * v)
-        g[d_e + d_m:] = gh
+        g[o_h:o_s] = gh
+        gs = np.zeros(len(snd_active))
+        for (p, v), ri in zip(snd_rows, r):
+            np.add.at(gs, p, ri * v)
+        g[o_s:] = gs
         g += lam * diff
         g[frozen] = 0.0
         return loss, g
@@ -202,16 +234,19 @@ def personalize(base: Head, examples: list[Example], weights: np.ndarray, priors
     res = minimize(f, w0.copy(), jac=True, method="L-BFGS-B", options={"maxiter": max_iter, "gtol": tol, "ftol": 1e-15})
     theta = res.x
     w_hash = base.w_hash.copy()
-    w_hash[active] = theta[d_e + d_m:].astype(np.float32)
+    w_hash[active] = theta[o_h:o_s].astype(np.float32)
+    w_snd = base.w_snd.copy()
+    w_snd[snd_active] = theta[o_s:].astype(np.float32)
     return replace(
         base,
         w_embed=theta[:d_e].astype(np.float32),
-        w_meta=theta[d_e:d_e + d_m].astype(np.float32),
+        w_meta=theta[d_e:o_h].astype(np.float32),
         w_hash=w_hash,
+        w_snd=w_snd,
     )
 
 
 def empty_head(idf: np.ndarray | None = None) -> Head:
     z = lambda n: np.zeros(n, dtype=np.float32)  # noqa: E731
-    return Head(0.0, z(EMBED_DIM), z(EMBED_DIM), z(N_META), z(N_META), z(BUCKETS),
+    return Head(0.0, z(EMBED_DIM), z(EMBED_DIM), z(N_META), z(N_META), z(BUCKETS), z(BUCKETS),
                 idf if idf is not None else np.ones(BUCKETS, dtype=np.float32), 0.0, 1.0, z(N_META))

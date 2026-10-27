@@ -6,6 +6,9 @@ Placeholder grammar (see the YAML header): `{slot}`, `{a|b|c}` (options may nest
 
 Each template gets its own RNG seeded from (seed, template id), so editing one template never changes the
 expansions of another. Expansions are deduplicated within a template.
+
+Every category is legitimate (label 0) except `promo`: for this app's user a promotion is spam even from a business
+they signed up with.
 """
 
 from __future__ import annotations
@@ -186,7 +189,7 @@ def expand_templates(doc: dict, *, seed: int, target_total: int, max_per_templat
             seen.add(text)
             rows.append({
                 "text": text,
-                "label": 0,
+                "label": 1 if t["category"] == "promo" else 0,
                 "source": "templates",
                 "source_id": f"{t['id']}#{len(seen)}",
                 "category": t["category"],

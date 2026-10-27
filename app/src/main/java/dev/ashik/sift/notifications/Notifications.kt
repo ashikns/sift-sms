@@ -154,18 +154,18 @@ class MessageNotifier(
     }
 
     /**
-     * Id of a rescan's progress notice: untagged, like a foreground-service notification, and one per work request so
-     * a replaced rescan can't clear its successor's.
+     * Id of a rescan's or re-check's progress notice: untagged, like a foreground-service notification, and one per work
+     * request so a replaced one can't clear its successor's.
      */
     fun scanNotificationId(workId: UUID): Int = workId.hashCode().takeIf { it != 0 } ?: 1
 
-    /** The rescan's ongoing progress notice, also its foreground-service notification ([total] 0 while counting). */
-    fun scanProgress(workId: UUID, done: Int, total: Int): Notification = scanProgressBuilder(workId, done, total).build()
+    /** The ongoing progress notice titled [title], also the work's foreground-service notification ([total] 0 while counting). */
+    fun scanProgress(workId: UUID, title: Int, done: Int, total: Int): Notification = scanProgressBuilder(workId, title, done, total).build()
 
-    fun updateScanProgress(workId: UUID, done: Int, total: Int) =
-        post(null, scanNotificationId(workId).toLong(), scanProgressBuilder(workId, done, total))
+    fun updateScanProgress(workId: UUID, title: Int, done: Int, total: Int) =
+        post(null, scanNotificationId(workId).toLong(), scanProgressBuilder(workId, title, done, total))
 
-    /** Removes the notice when the rescan ran as a plain job; a foreground service's notice leaves with the service. */
+    /** Removes the notice when the work ran as a plain job; a foreground service's notice leaves with the service. */
     fun cancelScanProgress(workId: UUID) = manager.cancel(scanNotificationId(workId))
 
     fun cancelScanDone() = manager.cancel(TAG_SCAN_DONE, 0)
@@ -194,9 +194,9 @@ class MessageNotifier(
         post(TAG_SCAN_DONE, 0, builder)
     }
 
-    private fun scanProgressBuilder(workId: UUID, done: Int, total: Int) = NotificationCompat.Builder(context, Channels.SCAN)
+    private fun scanProgressBuilder(workId: UUID, title: Int, done: Int, total: Int) = NotificationCompat.Builder(context, Channels.SCAN)
         .setSmallIcon(R.drawable.ic_stat_message)
-        .setContentTitle(context.getString(R.string.scan_progress_title))
+        .setContentTitle(context.getString(title))
         .setContentText(if (total > 0) context.getString(R.string.scan_progress_text, done, total) else null)
         .setProgress(total, done, total == 0)
         .setOngoing(true)

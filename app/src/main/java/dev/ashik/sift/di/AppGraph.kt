@@ -58,7 +58,7 @@ class AppGraph(private val context: Context) {
     val visibleThread = VisibleThreadTracker()
     val shortcuts by lazy { ConversationShortcuts(context) }
     val notifier by lazy { MessageNotifier(context, db, shortcuts) }
-    val feedback by lazy { FeedbackService(db, engine, rescore, projector, notifier, normalizer, appScope) }
+    val feedback by lazy { FeedbackService(db, engine, rescore, projector, notifier, normalizer, scheduler, appScope) }
     val scheduler by lazy { WorkScheduler(context) }
     val sync by lazy { SyncEngine(db, gateway, repository, projector, role, scheduler, contacts) }
     val incoming by lazy {

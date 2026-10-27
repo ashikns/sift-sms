@@ -1,8 +1,10 @@
 """Download the public SMS datasets into ml/data/raw/<source>/ and record them in MANIFEST.json.
 
-Each source gets its own directory; downloads resume from `.part` files, retry with backoff, and are
-verified against published SHA-256 hashes where the host provides one. Archives are extracted (with
-path-traversal checks) into `<source>/extracted/`. Nothing downloaded is ever executed.
+Each source gets its own directory (the Indian corpora under india/); downloads resume from `.part` files, retry
+with backoff, and are verified against published SHA-256 hashes where the host provides one, else against the hash
+pinned when the file was first fetched (files at pinned commits/revisions, so their bytes can't change). Archives
+marked `extract` are extracted (with path-traversal checks) into `<source>/extracted/`. Nothing downloaded is ever
+executed. The user's labeled inbox export is local and private, so it isn't fetched.
 
 Usage: uv run python -I scripts/s00_fetch.py [--only SOURCE ...] [--force]
 """
@@ -34,6 +36,12 @@ USER_AGENT = "sift-smsml-fetch/1.0 (+research dataset download)"
 MENDELEY_FILES_API = "https://data.mendeley.com/public-api/datasets/f45bkkt8pr/files?folder_id=root&version=1"
 GH_NCSU = "https://raw.githubusercontent.com/wspr-ncsu/sms-phishing/main/"
 GH_IMC25 = "https://raw.githubusercontent.com/reportsmishing/Smishing-Dataset-IMC25/main/"
+GH_IIITD = ("https://raw.githubusercontent.com/princebari/-SMS-Spam-Classification-on-Indian-Dataset-A-Crowdsourced-"
+            "Collection-of-Hindi-and-English-Messages/2faeb9a823bdc1d6eee036152bd79f81759d05c3/")
+GH_CUBE = "https://raw.githubusercontent.com/saranshbansal/spam-detection-analytics-tool/32f57a55b523689722ebd18f14939a08fabfa784/"
+GH_JUNIORALIVE = "https://raw.githubusercontent.com/junioralive/india-spam-sms-classification/09137cc677a7d8d24caef0817de41f55a6b3ed44/"
+HF_RIDHAM = "https://huggingface.co/datasets/Ridham115/indian-scam-sms-synthetic-audited/resolve/45e92c38ba20e973ef3ff5d1893a0a710f622018/"
+HF_CRAFTOGRAMMER = "https://huggingface.co/datasets/craftogrammer/sms-tool-calling-sft/resolve/6764a2ae68a010261f52f75101e9524f78050e32/"
 
 SOURCES: dict[str, dict] = {
     "uci": {
@@ -77,6 +85,87 @@ SOURCES: dict[str, dict] = {
             {"url": GH_IMC25 + "dataset/time_day.csv", "name": "time_day.csv"},
             {"url": GH_IMC25 + "LICENSE.txt", "name": "LICENSE.txt"},
             {"url": GH_IMC25 + "README.md", "name": "README.md"},
+        ],
+    },
+    "iiitd_smsassassin": {
+        "title": "IIIT-Delhi SMS spam dataset (SMSAssassin; Yadav, Kumaraguru, Goyal, Gupta, Naik 2011), GitHub copy",
+        "homepage": "https://github.com/princebari/-SMS-Spam-Classification-on-Indian-Dataset-A-Crowdsourced-"
+                    "Collection-of-Hindi-and-English-Messages",
+        "license": "none stated (a copy of an IIIT-D research dataset)",
+        "license_url": None,
+        "dir": "india/iiitd_smsassassin",
+        "files": [
+            {"url": GH_IIITD + "indian_spam.csv", "name": "indian_spam.csv",
+             "pinned_sha256": "76625e8b1802a9a578b522ffb711dafe695a219600e6e2e180f1cea13c0791c3"},
+            {"url": GH_IIITD + "README.md", "name": "README.md",
+             "pinned_sha256": "44e5bcc19006c66f3ca3c48364011b49ed8e6525d8691376cab8e11364d4ba28"},
+        ],
+    },
+    "cube_sms77k": {
+        "title": "Indian SMS corpus cunique.csv (~77k unique, sender + truth label; 'Github1' in Salman et al. 2022)",
+        "homepage": "https://github.com/saranshbansal/spam-detection-analytics-tool",
+        "license": "none stated",
+        "license_url": None,
+        "dir": "india/cube_sms77k",
+        "files": [
+            {"url": GH_CUBE + "cunique.csv", "name": "cunique.csv",
+             "pinned_sha256": "5bb81a15c1a5beadef82d7ee9bb5f81126394fe09efbf6f0b910934b904dc495"},
+        ],
+    },
+    "junioralive_spam_ham": {
+        "title": "India Spam SMS Classification (junioralive)",
+        "homepage": "https://github.com/junioralive/india-spam-sms-classification",
+        "license": "MIT",
+        "license_url": GH_JUNIORALIVE + "LICENSE",
+        "dir": "india/junioralive_spam_ham",
+        "files": [
+            {"url": GH_JUNIORALIVE + "dataset/spam_ham_india.csv", "name": "spam_ham_india.csv",
+             "pinned_sha256": "e6a28126d1c4ec9d805a10cd89f2de2bb63650532102e9f35ab05c909c3a79f3"},
+            {"url": GH_JUNIORALIVE + "LICENSE", "name": "LICENSE",
+             "pinned_sha256": "203ac8eb9e2c16d5cd517c24732f87003f0b9be3e3bfd3ec3253d2cb6b61cb8d"},
+            {"url": GH_JUNIORALIVE + "README.md", "name": "README.md",
+             "pinned_sha256": "41f6988adea27e3d6896710a7b10c9e4e079ff1404c1d1f974fc5b623229ee16"},
+        ],
+    },
+    "hf_ridham_synth_scam": {
+        "title": "Indian Scam SMS, synthetic and audited (Ridham115/indian-scam-sms-synthetic-audited)",
+        "homepage": "https://huggingface.co/datasets/Ridham115/indian-scam-sms-synthetic-audited",
+        "license": "CC BY 4.0",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "dir": "india/hf_ridham_synth_scam",
+        "files": [
+            {"url": HF_RIDHAM + "data/synthetic_audited.csv", "name": "synthetic_audited.csv",
+             "pinned_sha256": "45bde5f156a1a42698bab209e32bcd41b3639013d772f644cc3208ed39fb61e2"},
+            {"url": HF_RIDHAM + "README.md", "name": "README.md",
+             "pinned_sha256": "bc661d6cbf9318a00786f34062f640eb24333644f2941b03375c22f27c755c7c"},
+            {"url": HF_RIDHAM + "label_rubric.md", "name": "label_rubric.md",
+             "pinned_sha256": "e44b9eda3e6540851a51570fe0866a102d1504e4825f591bd5d8074e834946fe"},
+        ],
+    },
+    "hf_craftogrammer_txn": {
+        "title": "craftogrammer/sms-tool-calling-sft (real Indian SMS with DLT senders in tool-calling conversations)",
+        "homepage": "https://huggingface.co/datasets/craftogrammer/sms-tool-calling-sft",
+        "license": "none declared",
+        "license_url": None,
+        "dir": "india/hf_craftogrammer_txn",
+        "files": [
+            {"url": HF_CRAFTOGRAMMER + "sft_tool_train.jsonl", "name": "sft_tool_train.jsonl",
+             "pinned_sha256": "43e98ac3726ffb5e28e98a7d884cf436e046b90ea3b8783f1ad1deb1f55f2aed"},
+            {"url": HF_CRAFTOGRAMMER + "sft_tool_eval.jsonl", "name": "sft_tool_eval.jsonl",
+             "pinned_sha256": "191bfa3614034e9ba0a21fc21c30b35ea7edcc7f54e4f4c724fde2fb9b9bcfb5"},
+        ],
+    },
+    # Unlabeled (the pseudo-labeling pool, scripts/s01b_rider_pool.py), read straight from the archive. Kaggle may
+    # want API credentials for the download.
+    "kaggle_rider_inbox": {
+        "title": "Inbox dumps of 93 Indian delivery riders, 2022 (Kaggle ramniwashkumar/sms-data)",
+        "homepage": "https://www.kaggle.com/datasets/ramniwashkumar/sms-data",
+        "license": "CC0: Public Domain (per the Kaggle listing)",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "dir": "india/kaggle_rider_inbox",
+        "files": [
+            {"url": "https://www.kaggle.com/api/v1/datasets/download/ramniwashkumar/sms-data", "name": "sms-data.zip",
+             "pinned_sha256": "c2ae0cac33e472bfedee341a19e18c8968d3f4b9c23a789027a5915996e563b8"},
         ],
     },
 }
@@ -201,7 +290,7 @@ def load_manifest() -> dict:
 
 
 def fetch_source(sess: requests.Session, name: str, spec: dict, previous: dict | None, force: bool) -> dict:
-    src_dir = RAW_DIR / name
+    src_dir = RAW_DIR / spec.get("dir", name)
     record = {
         "title": spec["title"],
         "homepage": spec["homepage"],
@@ -229,7 +318,7 @@ def fetch_source(sess: requests.Session, name: str, spec: dict, previous: dict |
             entry = prev
         else:
             print(f"  ↓ {f['url']}")
-            download(sess, f["url"], dest, f.get("sha256"))
+            download(sess, f["url"], dest, f.get("sha256") or f.get("pinned_sha256"))
             entry = {
                 "url": f["url"],
                 "path": rel,
@@ -237,6 +326,7 @@ def fetch_source(sess: requests.Session, name: str, spec: dict, previous: dict |
                 "bytes": dest.stat().st_size,
                 "retrieved_utc": utc_now(),
                 "sha256_verified_against_host": bool(f.get("sha256")),
+                "sha256_pinned": bool(f.get("pinned_sha256")),
             }
         record["files"].append(entry)
         if f.get("extract"):

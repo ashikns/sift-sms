@@ -27,11 +27,12 @@ enum class Reason {
 }
 
 /**
- * Facts about the channel a message arrived on. They feed the message's own score (sender-type features); the sender
- * never decides a verdict by itself.
+ * Facts about the channel a message arrived on. They feed the message's own score (sender-type features, and the
+ * sender paired with the message's words and link domains); the sender never decides a verdict by itself.
  *
  * @param key normalized sender key: E.164 number, short-code digits, upper-cased alphanumeric ID, or lower-cased email.
- *   Only used so "not spam" near-duplicate matches can require the same sender.
+ *   Its identity (ml/SPEC.md sid: one per DLT sender across routes, e.g. `ICICIT` for `AX-ICICIT-S`) scopes the
+ *   sender × content features, and "not spam" near-duplicate matches can require the same one.
  * @param international the number's country differs from the SIM's.
  * @param firstContact no earlier message from this sender exists.
  */
@@ -82,7 +83,10 @@ data class TrainingExample(
     val label: UserLabel,
     val createdAt: Long,
     val embedding: FloatArray?,
-    /** The sender's normalized key (see [SenderInfo.key]); lets "not spam" memory match the same sender. */
+    /**
+     * The sender's normalized key (see [SenderInfo.key]): the mark also teaches the model about this sender's wording,
+     * and its "not spam" near-duplicates can require the same sender.
+     */
     val senderKey: String = "",
 ) {
     override fun equals(other: Any?) = other is TrainingExample && other.messageId == messageId

@@ -2,8 +2,9 @@
 
     uv run python -I scripts/s11_package.py
 
-Copies encoder.int8.ort, head_base.bin, vocab.txt and resources/*, and writes model.json with SHA-256s for every
-file. The engine (spamcore ModelBundle.load) verifies them at load time.
+Copies encoder.int8.ort, head_base.bin (score_v2 blocks, including w_snd), vocab.txt and resources/*, and writes
+model.json with SHA-256s for every file and the personalization priors s08 chose (embed, meta, hash, snd). The engine
+(spamcore ModelBundle.load) verifies them at load time.
 """
 
 from __future__ import annotations
@@ -14,8 +15,9 @@ import json
 import shutil
 import sys
 
-from smsml.features import META_NAMES
+from smsml.features import FEATURE_VERSION, META_NAMES
 from smsml.hashing import BITS, SEED
+from smsml.head import Head
 from smsml.pipeline import APP_BUNDLE, BUNDLE_WORK, ML_DIR, config, sha256_file, snapshot_dir, work, write_json
 from smsml.resources import FILES
 
@@ -28,6 +30,7 @@ def main() -> int:
     pers = json.loads(work("personalization.json").read_text())
     metrics_path = work("metrics.json")
     metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
+    Head.load(BUNDLE_WORK / "head_base.bin")  # fails unless the head has every score_v2 block
 
     if APP_BUNDLE.exists():
         shutil.rmtree(APP_BUNDLE)
@@ -43,7 +46,7 @@ def main() -> int:
     head_sha = sha256_file(APP_BUNDLE / "head_base.bin")
     now = dt.datetime.now(dt.timezone.utc)
     personalization = {
-        "priors": {k: best[k] for k in ("embed", "meta", "hash")},
+        "priors": {k: best[k] for k in ("embed", "meta", "hash", "snd")},
         "weights": {**pc["weights"], "ham": best["ham"]},
         "debounce_ms": pc["debounce_ms"],
     }
@@ -65,7 +68,7 @@ def main() -> int:
         "tokenizer": {"file": "vocab.txt", "sha256": sha256_file(APP_BUNDLE / "vocab.txt")},
         "normalizer": {"version": "norm_v1",
                        "resources": {name: sha256_file(APP_BUNDLE / "resources" / name) for name in FILES}},
-        "features": {"version": "feat_v1", "hash_bits": BITS, "hash_seed": SEED, "meta_names": list(META_NAMES)},
+        "features": {"version": FEATURE_VERSION, "hash_bits": BITS, "hash_seed": SEED, "meta_names": list(META_NAMES)},
         "head": {"file": "head_base.bin", "sha256": head_sha},
         "thresholds": cal["thresholds"],
         "personalization": personalization,

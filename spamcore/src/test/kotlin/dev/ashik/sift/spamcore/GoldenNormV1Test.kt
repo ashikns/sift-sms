@@ -8,6 +8,7 @@ import dev.ashik.sift.spamcore.tokenize.WordPieceTokenizer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
@@ -45,9 +46,10 @@ class GoldenNormV1Test {
     )
 
     @Test
-    fun `normalizer tokenizer and features match python`() {
+    fun `normalizer tokenizer sender identity and features match python`() {
         val all = cases()
         assertTrue(all.size > 1000, "expected the full fixture, got ${all.size}")
+        assertTrue(all.count { it["sid"]!!.jsonPrimitive.contentOrNull != null } > 1000, "expected cases with a sender")
         val failures = ArrayList<String>()
         for ((i, c) in all.withIndex()) {
             val raw = c["raw"]!!.jsonPrimitive.content
@@ -79,6 +81,18 @@ class GoldenNormV1Test {
                 val vals = c["val"]!!.jsonArray.map { it.jsonPrimitive.double }
                 val worst = vals.indices.maxOfOrNull { abs(vals[it] - v.values[it]) } ?: 0.0
                 if (worst > 1e-6) fail("val", "max|d|<=1e-6", worst)
+            }
+            val sid = c["sid"]!!.jsonPrimitive.contentOrNull
+            val actualSid = Features.senderId(c["sender"]!!.jsonPrimitive.contentOrNull)
+            if (actualSid != sid) fail("sid", sid, actualSid)
+            // Integer sums and one division per value: the SND vector is bit-identical, not just close.
+            val snd = Features.snd(sid, n)
+            val sndIdx = c["snd_idx"]!!.jsonArray.map { it.jsonPrimitive.int }
+            val sndVal = c["snd_val"]!!.jsonArray.map { it.jsonPrimitive.double.toFloat() }
+            if (snd.indices.toList() != sndIdx) {
+                fail("snd_idx", sndIdx, snd.indices.toList())
+            } else if (snd.values.toList() != sndVal) {
+                fail("snd_val", sndVal, snd.values.toList())
             }
             val meta = c["meta"]!!.jsonArray.map { it.jsonPrimitive.double }
             val m = Features.metadata(n)

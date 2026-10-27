@@ -11,7 +11,8 @@ class LabeledMemory private constructor(
     val tauSpam: Double,
     val tauHam: Double,
 ) {
-    class Entry(val key: Long, val label: Int, val sparse: SparseVector, val senderKey: String, val domains: Set<String>)
+    /** [sid] is the labeled message's sender identity (ml/SPEC.md), or null when it has none. */
+    class Entry(val key: Long, val label: Int, val sparse: SparseVector, val sid: String?, val domains: Set<String>)
 
     data class Match(val label: Int, val key: Long, val cosine: Double)
 
@@ -27,15 +28,19 @@ class LabeledMemory private constructor(
     fun without(keys: Collection<Long>) =
         LabeledMemory(LinkedHashMap(entries).apply { keys.forEach { remove(it) } }, tauSpam, tauHam)
 
-    /** Ham matches also need the same sender, or no link domain the matched message didn't have. */
-    fun match(sparse: SparseVector, senderKey: String, domains: Set<String>): Match? {
+    /**
+     * Ham matches also need the same sender, or no link domain the matched message didn't have. Senders are compared by
+     * sid, so every route of one DLT sender (`AX-ICICIT-S`, `JD-ICICIT-T`) is the same sender; without a sid a message
+     * has no same sender.
+     */
+    fun match(sparse: SparseVector, sid: String?, domains: Set<String>): Match? {
         var bestSpam: Match? = null
         var bestHam: Match? = null
         for (e in entries.values) {
             val cos = SparseVector.cosine(sparse, e.sparse)
             if (e.label == 1) {
                 if (cos >= tauSpam && (bestSpam == null || cos > bestSpam.cosine)) bestSpam = Match(1, e.key, cos)
-            } else if (cos >= tauHam && (senderKey == e.senderKey || e.domains.containsAll(domains))) {
+            } else if (cos >= tauHam && ((sid != null && sid == e.sid) || e.domains.containsAll(domains))) {
                 if (bestHam == null || cos > bestHam.cosine) bestHam = Match(0, e.key, cos)
             }
         }

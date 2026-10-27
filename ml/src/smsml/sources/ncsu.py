@@ -14,6 +14,9 @@ Among candidates within 0.15 word-set Jaccard of the best match, the winner pref
 window contains the message time, then campaigns that still have unassigned messages (their published counts),
 then higher Jaccard. This reproduces the exact published message count for ~80% of campaigns. Unmatched messages
 get no campaign id. Texts are kept raw (URLs intact, scraped spacing untouched).
+
+The sender is kept as recorded (stripped), with the app's kind (schema.sender_type). Numbers the gateways masked
+(`+1818355XXXX`, `***0192`) aren't a real sender, so only their kind is kept, reading the mask as digits.
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ from pathlib import Path
 import pandas as pd
 
 from .lang import is_english
-from .schema import finalize
+from .schema import finalize, sender_type
 
 MSG_PATH = Path("ncsu/phishing_messages.csv")
 CAMP_PATH = Path("ncsu/phishing_campaigns.csv")
@@ -36,6 +39,9 @@ MAX_WORD_DF = 400
 MIN_JACCARD_URL = 0.3
 MIN_JACCARD_WORDS = 0.6
 NEAR_BEST_JACCARD = 0.15
+MASK = "Xx*"  # what the gateways mask a number's digits with
+NUMBER_CHARS = frozenset("0123456789+" + MASK)
+UNMASK = str.maketrans(MASK, "0" * len(MASK))
 
 csv.field_size_limit(1 << 30)
 
@@ -185,16 +191,13 @@ class CampaignMatcher:
         return best
 
 
-def sender_type(sender: str) -> str | None:
-    s = sender.strip()
-    if not s:
-        return None
-    if "@" in s:
-        return "EMAIL"
-    digits = s[1:] if s.startswith("+") else s
-    if digits and all(c.isdigit() or c in "Xx" for c in digits):
-        return "SHORT_CODE" if not s.startswith("+") and len(digits) <= 6 else "PHONE"
-    return "ALPHANUMERIC"
+def sender_fields(raw: str) -> tuple[str | None, str | None]:
+    """(sender, sender_type) for a recorded sender; a masked number keeps only its kind."""
+    s = raw.strip()
+    if set(s) <= NUMBER_CHARS and any(c in MASK for c in s):
+        return None, sender_type(s.translate(UNMASK))
+    kind = sender_type(s)
+    return (s if kind else None), kind
 
 
 def load(raw_dir: Path, *, min_chars: int = 8, min_ascii_ratio: float = 0.9, min_stopword_hits: int = 1,
@@ -219,12 +222,13 @@ def load(raw_dir: Path, *, min_chars: int = 8, min_ascii_ratio: float = 0.9, min
                                            float(rec[6] or 0), remaining)
 
     rows = []
-    for i, (msg_id, _obj, _dest, message, sender, time_s, _err) in enumerate(records):
+    for i, (msg_id, _obj, _dest, message, raw_sender, time_s, _err) in enumerate(records):
         text = message.strip()
         if len(" ".join(text.split())) < min_chars:
             continue
         ts = float(time_s) if time_s else None
         cid = campaign_of.get(i)
+        sender, kind = sender_fields(raw_sender)
         rows.append({
             "text": text,
             "label": 1,
@@ -233,6 +237,7 @@ def load(raw_dir: Path, *, min_chars: int = 8, min_ascii_ratio: float = 0.9, min
             "timestamp": pd.Timestamp(ts, unit="s", tz="UTC") if ts is not None else pd.NaT,
             "campaign_id": f"ncsu:{cid}" if cid is not None else None,
             "lang": "en" if is_english(text, min_ascii_ratio, min_stopword_hits) else "non-en",
-            "sender_type": sender_type(sender),
+            "sender": sender,
+            "sender_type": kind,
         })
     return finalize(pd.DataFrame(rows))

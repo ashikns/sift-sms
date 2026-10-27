@@ -1,6 +1,6 @@
 {
-  "bundle_version": "2026.10.27-baeb3af3",
-  "created_utc": "2026-10-27T12:18:03+00:00",
+  "bundle_version": "2026.10.27-70210321",
+  "created_utc": "2026-10-27T21:00:35+00:00",
   "encoder": {
     "base_model": "sentence-transformers/all-MiniLM-L6-v2@1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
     "dim": 384,
@@ -13,7 +13,7 @@
     "ort_version": "1.27.0",
     "output": "embedding",
     "quant": "dynamic-qint8-per-channel",
-    "sha256": "0e9b81c228dd96eab1551b9276a5d955c98341864e9e80c979168d33f8489e25"
+    "sha256": "52d6228cf868fe599f3a47415f60dd02d45d95eefc511374bd7853bf5647456b"
   },
   "features": {
     "hash_bits": 18,
@@ -47,11 +47,11 @@
       "snd_international",
       "snd_first_contact"
     ],
-    "version": "feat_v1"
+    "version": "feat_v2"
   },
   "head": {
     "file": "head_base.bin",
-    "sha256": "a5daf00dc2e34e300b33efa98b0757f1ceb240095f2b0038e6836db98b9ed677"
+    "sha256": "4379104f29c9db560e9d6f4f73d71323677df2af16a23138b599f6e709055a81"
   },
   "knn": {
     "tau_ham": 0.9,
@@ -59,69 +59,80 @@
   },
   "metrics": {
     "future": {
-      "n": 216,
-      "recall": 0.9490740740740741
+      "n": 215,
+      "recall": 0.8232558139534883,
+      "recall_at_fpr_budget": 0.9302325581395349
     },
     "gates": {
       "future_recall": true,
+      "inbox_fpr": true,
+      "inbox_ranking": true,
       "int8": true,
       "learning_drift": true,
       "learning_no_harm": true,
       "learning_repeats": true,
-      "modern_fpr": false,
+      "modern_fpr": true,
       "modern_otp": true,
       "modern_recall": true,
       "robust_encoding": true,
       "robust_visible": true,
-      "test_fpr": false,
+      "test_fpr": true,
       "test_pr_auc": true,
       "test_recall": true
     },
     "int8": {
-      "cosine_mean": 0.9920133893191815,
-      "cosine_min": 0.9809659719467163,
-      "pr_auc_int8_minus_fp32": -6.373574757079226e-06
+      "cosine_mean": 0.990592615455389,
+      "cosine_min": 0.9812355637550354,
+      "pr_auc_int8_minus_fp32": 5.699549858517727e-05
     },
     "learning": {
-      "diligent_cost_ratio": 0.9456264775413712,
-      "diligent_repeat_campaign_error_ratio": 0.6437193231877211,
-      "flagged_legit_variants_kept": 0.75,
-      "flagged_legit_variants_kept_base": 0.125,
-      "missed_scam_variants_caught": 0.6546762589928058,
-      "missed_scam_variants_caught_base": 0.10071942446043165,
-      "noisy_cost_ratio": 0.9739952718676123,
+      "diligent_cost_ratio": 1.0054171180931744,
+      "diligent_repeat_campaign_error_ratio": 0.500233912501047,
+      "flagged_legit_variants_kept": 1.0,
+      "flagged_legit_variants_kept_base": 0.25,
+      "missed_scam_variants_caught": 0.7358333333333333,
+      "missed_scam_variants_caught_base": 0.08833333333333333,
+      "noisy_cost_ratio": 1.0054171180931744,
       "params": {
         "embed": 1000000.0,
         "ham": 1.0,
         "hash": 4.0,
         "meta": 1000000.0,
+        "snd": 0.25,
         "tau_spam": 0.8
       },
-      "spam_only_cost_ratio": 0.9810874704491725,
-      "spam_only_probe_fpr_delta": 0.015625
+      "spam_only_cost_ratio": 1.0205850487540629,
+      "spam_only_probe_fpr_delta": 0.0
     },
     "test": {
       "aggressive": {
-        "fpr": 0.01962809917355372,
-        "recall": 0.9623762376237623
+        "fpr": 0.018745493871665464,
+        "recall": 0.9490679968495668
+      },
+      "at_fpr_budget": {
+        "recall": 0.9278025728537674,
+        "threshold": 0.8794437935621152
       },
       "balanced": {
-        "fpr": 0.013429752066115703,
-        "fpr_upper95": 0.024924717141102976,
-        "recall": 0.9544554455445544
+        "fpr": 0.0007209805335255948,
+        "fpr_upper95": 0.002431614866367941,
+        "recall": 0.849304279338409
       },
       "conservative": {
-        "fpr": 0.0010330578512396695,
-        "recall": 0.9196605374823197
+        "fpr": 0.0,
+        "recall": 0.6991336308742452
       },
-      "n_ham": 968,
-      "n_spam": 3535,
-      "pr_auc": 0.999226587583207,
+      "n_ham": 1387,
+      "n_spam": 3809,
+      "pr_auc": 0.9985179445093559,
       "recall_by_source": {
-        "imc25": 0.9474342928660826,
-        "mishra": 0.9019607843137255,
-        "ncsu": 0.9889336016096579,
-        "uci": 0.7956989247311828
+        "iiitd_smsassassin": 0.7194244604316546,
+        "imc25": 0.7988313856427379,
+        "junioralive_spam_ham": 0.8181818181818182,
+        "mishra": 0.86,
+        "ncsu": 1.0,
+        "templates": 0.0,
+        "uci": 0.7204301075268817
       }
     }
   },
@@ -143,7 +154,8 @@
     "priors": {
       "embed": 1000000.0,
       "hash": 4.0,
-      "meta": 1000000.0
+      "meta": 1000000.0,
+      "snd": 0.25
     },
     "weights": {
       "cluster_cap": 2.0,
@@ -156,16 +168,16 @@
   "schema": 1,
   "thresholds": {
     "fallback": {
-      "aggressive": 0.7370137175407886,
-      "balanced": 0.9145827299211522,
-      "conservative": 0.9333778195306965,
-      "warn": 0.6129658716616578
+      "aggressive": 0.8196043980924914,
+      "balanced": 0.9411331551527657,
+      "conservative": 0.989689544397025,
+      "warn": 0.5901159378139065
     },
     "full": {
-      "aggressive": 0.3777904273114669,
-      "balanced": 0.5466336391937422,
-      "conservative": 0.881335517695954,
-      "warn": 0.2255848794259779
+      "aggressive": 0.7448842330466895,
+      "balanced": 0.9813686803984855,
+      "conservative": 0.9973490356772926,
+      "warn": 0.49450947462700956
     }
   },
   "tokenizer": {

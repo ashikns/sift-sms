@@ -2,7 +2,7 @@
 
     uv run python -I scripts/s07_calibrate.py
 
-Thresholds are set on val_a + val_b hams so that at most floor(target · n_ham) hams score at or above them
+Thresholds are set on val_a + val_b hams (except `noisy_sources`) so that at most floor(target · n_ham) hams score at or above them
 (FPR is independent of the spam/ham mix). Separate sets for the full head and the lexical-only fallback.
 The near-duplicate check measures, for validation messages and their nearest training neighbour by n-gram
 cosine, how often the labels agree above each cutoff, and picks the ham-match cutoff (s08 tunes the spam one).
@@ -21,14 +21,15 @@ from smsml.head import Head
 from smsml.pipeline import BUNDLE_WORK, config, work, write_json
 
 
-def scores(head: Head, emb, X, meta, fallback: bool) -> np.ndarray:
+def scores(head: Head, emb, X, S, meta, fallback: bool) -> np.ndarray:
     hash_part = X @ head.w_hash.astype(np.float64)
+    snd_part = S @ head.w_snd.astype(np.float64)  # unscaled in the fallback too (SPEC.md)
     meta_c = meta.astype(np.float64) - head.mu_meta.astype(np.float64)
     if fallback:
-        z = head.fb_bias + head.fb_scale * hash_part + meta_c @ head.w_meta_fb.astype(np.float64)
+        z = head.fb_bias + head.fb_scale * hash_part + meta_c @ head.w_meta_fb.astype(np.float64) + snd_part
     else:
         z = head.bias + (emb.astype(np.float64) - head.mu_embed.astype(np.float64)) @ head.w_embed.astype(np.float64) \
-            + meta_c @ head.w_meta.astype(np.float64) + hash_part
+            + meta_c @ head.w_meta.astype(np.float64) + hash_part + snd_part
     return 1.0 / (1.0 + np.exp(-z))
 
 
@@ -53,15 +54,16 @@ def main() -> int:
     rows = np.load(work("emb_corpus_rows.npy"))
     emb = np.load(work("emb_corpus.npy"))
     X = sp.load_npz(work("features_X.npz")).astype(np.float64)
+    S = sp.load_npz(work("features_S.npz")).astype(np.float64)
     meta = np.load(work("features_meta.npy"))
     sub = df.iloc[rows].reset_index(drop=True)
     split, y = sub["split"].to_numpy(), sub["label"].to_numpy()
-    cal = np.isin(split, ["val_a", "val_b"])
+    cal = np.isin(split, ["val_a", "val_b"]) & ~sub["source"].isin(cfg["noisy_sources"]).to_numpy()
 
     out: dict = {"thresholds": {}, "recall": {}, "n_ham": int((y[cal] == 0).sum()), "n_spam": int((y[cal] == 1).sum())}
     targets = cfg["calibrate"]["fpr"]
     for kind, fb in (("full", False), ("fallback", True)):
-        p = scores(head, emb[cal], X[cal], meta[cal], fb)
+        p = scores(head, emb[cal], X[cal], S[cal], meta[cal], fb)
         ham, spam = p[y[cal] == 0], p[y[cal] == 1]
         t = {name: threshold_at(ham, float(fpr)) for name, fpr in targets.items()}
         out["thresholds"][kind] = t

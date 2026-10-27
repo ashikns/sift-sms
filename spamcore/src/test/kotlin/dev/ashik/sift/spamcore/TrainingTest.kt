@@ -38,17 +38,18 @@ class TrainingTest {
 
     private fun baseHead(): LinearHead {
         val b = fixture["base"]!!.jsonObject
-        val wHash = FloatArray(Features.BUCKETS)
-        val idx = b["hash_idx"]!!.jsonArray.ints()
-        val vals = b["hash_val"]!!.jsonArray.floats()
-        idx.forEachIndexed { i, k -> wHash[k] = vals[i] }
+        fun sparseBlock(idxName: String, valName: String) = FloatArray(Features.BUCKETS).also { w ->
+            val vals = b[valName]!!.jsonArray.floats()
+            b[idxName]!!.jsonArray.ints().forEachIndexed { i, k -> w[k] = vals[i] }
+        }
         return LinearHead(
             bias = b["bias"]!!.jsonPrimitive.double,
             wEmbed = b["w_embed"]!!.jsonArray.floats(),
             muEmbed = b["mu_embed"]!!.jsonArray.floats(),
             wMeta = b["w_meta"]!!.jsonArray.floats(),
             muMeta = b["mu_meta"]!!.jsonArray.floats(),
-            wHash = wHash,
+            wHash = sparseBlock("hash_idx", "hash_val"),
+            wSnd = sparseBlock("snd_idx", "snd_val"),
             idf = FloatArray(Features.BUCKETS) { 1f },
             fbBias = 0.0, fbScale = 1.0, wMetaFb = FloatArray(Features.N_META),
         )
@@ -63,6 +64,7 @@ class TrainingTest {
             embedding = (o["emb"] as? JsonArray)?.floats().takeIf { o["emb"] !is JsonNull },
             meta = o["meta"]!!.jsonArray.floats(),
             sparse = SparseVector(o["idx"]!!.jsonArray.ints(), o["val"]!!.jsonArray.floats()),
+            snd = SparseVector(o["snd_idx"]!!.jsonArray.ints(), o["snd_val"]!!.jsonArray.floats()),
         )
     }
 
@@ -75,13 +77,26 @@ class TrainingTest {
     }
 
     private fun priors() = fixture["priors"]!!.jsonObject.let {
-        Priors(it["embed"]!!.jsonPrimitive.double, it["meta"]!!.jsonPrimitive.double, it["hash"]!!.jsonPrimitive.double)
+        Priors(
+            it["embed"]!!.jsonPrimitive.double, it["meta"]!!.jsonPrimitive.double, it["hash"]!!.jsonPrimitive.double,
+            it["snd"]!!.jsonPrimitive.double,
+        )
     }
 
     @Test
     fun `example weights match python`() {
         val expected = fixture["expected"]!!.jsonObject["weights"]!!.jsonArray.doubles()
         assertArrayEquals(expected, ExampleWeighting.weights(examples(), weighting()), 1e-12)
+    }
+
+    @Test
+    fun `base logits with the sender term match python`() {
+        val expected = fixture["expected"]!!.jsonObject["z"]!!.jsonArray.doubles()
+        val head = baseHead()
+        val ex = examples()
+        assertTrue(ex.count { it.snd.size > 0 } > 40 && ex.any { it.snd.size == 0 })
+        val worst = ex.indices.maxOf { abs(head.z(ex[it].embedding, ex[it].meta, ex[it].sparse, ex[it].snd) - expected[it]) }
+        assertTrue(worst < 1e-9, "max |z_kotlin - z_python| = $worst")
     }
 
     @Test
@@ -97,6 +112,9 @@ class TrainingTest {
             exp["active_idx"]!!.jsonArray.ints().let { idx ->
                 maxDiff(exp["active_val"]!!.jsonArray.floats(), FloatArray(idx.size) { result.head.wHash[idx[it]] })
             },
+            exp["snd_active_idx"]!!.jsonArray.ints().let { idx ->
+                maxDiff(exp["snd_active_val"]!!.jsonArray.floats(), FloatArray(idx.size) { result.head.wSnd[idx[it]] })
+            },
         )
         assertTrue(worst < 1e-4, "max |w_kotlin - w_python| = $worst")
     }
@@ -110,13 +128,33 @@ class TrainingTest {
     }
 
     @Test
-    fun `no examples returns the base head and huge priors stay near it`() {
+    fun `no examples returns the base head and frozen priors pin every block`() {
         val base = baseHead()
         assertTrue(MapLogisticTrainer().train(base, emptyList(), DoubleArray(0), Priors()).head === base)
         val ex = examples()
-        val r = MapLogisticTrainer().train(base, ex, ExampleWeighting.weights(ex, weighting()), Priors().scaled(1e7))
-        assertTrue(maxDiff(base.wEmbed, r.head.wEmbed) < 1e-4)
-        assertTrue(maxDiff(base.wMeta, r.head.wMeta) < 1e-4)
+        val frozen = Priors(Priors.FROZEN, Priors.FROZEN, Priors.FROZEN, Priors.FROZEN)
+        val r = MapLogisticTrainer().train(base, ex, ExampleWeighting.weights(ex, weighting()), frozen).head
+        assertArrayEquals(base.wEmbed, r.wEmbed)
+        assertArrayEquals(base.wMeta, r.wMeta)
+        assertArrayEquals(base.wHash, r.wHash)
+        assertArrayEquals(base.wSnd, r.wSnd)
+    }
+
+    @Test
+    fun `the sender block learns only from examples with a sender and a frozen prior pins it`() {
+        val base = baseHead()
+        val ex = examples()
+        val w = ExampleWeighting.weights(ex, weighting())
+        val learned = MapLogisticTrainer().train(base, ex, w, priors()).head
+        val sndActive = ex.flatMap { it.snd.indices.asIterable() }.toSet()
+        val moved = (0 until Features.BUCKETS).filter { learned.wSnd[it] != base.wSnd[it] }
+        assertTrue(moved.isNotEmpty() && sndActive.containsAll(moved), "moved ${moved.size} SND weights")
+        val withoutSenders = ex.filter { it.snd.size == 0 }
+        val none = MapLogisticTrainer().train(base, withoutSenders, DoubleArray(withoutSenders.size) { 1.0 }, priors()).head
+        assertTrue(none.wSnd === base.wSnd)
+        val pinned = MapLogisticTrainer().train(base, ex, w, priors().copy(snd = Priors.FROZEN)).head
+        assertArrayEquals(base.wSnd, pinned.wSnd)
+        assertTrue((0 until Features.BUCKETS).any { pinned.wHash[it] != base.wHash[it] })
     }
 
     @Test
@@ -130,7 +168,7 @@ class TrainingTest {
         assertArrayEquals(a.wHash, b.wHash)
         // On average the personalized model agrees more with the labels than the base model does.
         fun agreement(h: LinearHead) = ex.sumOf { e ->
-            val p = LinearHead.sigmoid(h.z(e.embedding, e.meta, e.sparse))
+            val p = LinearHead.sigmoid(h.z(e.embedding, e.meta, e.sparse, e.snd))
             if (e.label == 1) p else 1 - p
         }
         assertTrue(agreement(a) > agreement(base))
@@ -138,19 +176,27 @@ class TrainingTest {
 
     @Test
     fun `five thousand examples train in under a second`() {
-        // Realistic structure: messages come from campaigns (shared n-grams + noise) whose label is consistent.
+        // Realistic structure: messages come from campaigns (shared n-grams + noise, one sender each) whose label is
+        // consistent.
         val base = baseHead()
         val rnd = Random(3)
+        class Campaign(val grams: List<Int>, val sender: List<Int>, val center: FloatArray, val spam: Boolean)
         val campaigns = (0 until 60).map { c ->
-            Triple((0 until 150).map { rnd.nextInt(Features.BUCKETS) }, FloatArray(LinearHead.EMBED_DIM) { rnd.nextFloat() - 0.5f }, c % 3 == 0)
+            Campaign(
+                (0 until 150).map { rnd.nextInt(Features.BUCKETS) }, (0 until 60).map { rnd.nextInt(Features.BUCKETS) },
+                FloatArray(LinearHead.EMBED_DIM) { rnd.nextFloat() - 0.5f }, c % 3 == 0,
+            )
+        }
+        fun sparse(idx: List<Int>): SparseVector {
+            val sorted = idx.distinct().sorted().toIntArray()
+            return SparseVector(sorted, FloatArray(sorted.size) { 0.1f + rnd.nextFloat() * 0.1f })
         }
         val ex = (0 until 5000).map { i ->
-            val (grams, center, spam) = campaigns[rnd.nextInt(campaigns.size)]
-            val idx = (grams.filter { rnd.nextFloat() < 0.8f } + (0 until 20).map { rnd.nextInt(Features.BUCKETS) })
-                .distinct().sorted().toIntArray()
-            val v = FloatArray(idx.size) { 0.1f + rnd.nextFloat() * 0.1f }
-            val emb = FloatArray(LinearHead.EMBED_DIM) { center[it] + (rnd.nextFloat() - 0.5f) * 0.2f }
-            PreparedExample(i.toLong(), if (spam) 1 else 0, i.toLong(), emb, FloatArray(Features.N_META) { rnd.nextFloat() }, SparseVector(idx, v))
+            val c = campaigns[rnd.nextInt(campaigns.size)]
+            val grams = sparse(c.grams.filter { rnd.nextFloat() < 0.8f } + (0 until 20).map { rnd.nextInt(Features.BUCKETS) })
+            val snd = sparse(c.sender.filter { rnd.nextFloat() < 0.8f })
+            val emb = FloatArray(LinearHead.EMBED_DIM) { c.center[it] + (rnd.nextFloat() - 0.5f) * 0.2f }
+            PreparedExample(i.toLong(), if (c.spam) 1 else 0, i.toLong(), emb, FloatArray(Features.N_META) { rnd.nextFloat() }, grams, snd)
         }
         val w = DoubleArray(ex.size) { 1.0 }
         MapLogisticTrainer(maxIterations = 5).train(base, ex.take(200), w, Priors()) // JIT warm-up
@@ -167,6 +213,7 @@ class TrainingTest {
         val back = LinearHead.fromBlocks(HeadCodec.decode(bytes))
         assertEquals(head.bias, back.bias)
         assertArrayEquals(head.wHash, back.wHash)
+        assertArrayEquals(head.wSnd, back.wSnd)
         assertArrayEquals(head.muMeta, back.muMeta)
         bytes[100] = (bytes[100] + 1).toByte()
         assertThrows(HeadCodec.FormatException::class.java) { HeadCodec.decode(bytes) }

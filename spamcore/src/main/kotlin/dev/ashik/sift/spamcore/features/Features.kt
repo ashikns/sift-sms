@@ -19,6 +19,8 @@ class SparseVector(val indices: IntArray, val values: FloatArray) {
     val size: Int get() = indices.size
 
     companion object {
+        val EMPTY = SparseVector(IntArray(0), FloatArray(0))
+
         /** Cosine accumulated in double (ml/SPEC.md near-duplicate similarity). */
         fun cosine(a: SparseVector, b: SparseVector): Double {
             if (a.norm == 0.0 || b.norm == 0.0) return 0.0
@@ -39,7 +41,7 @@ class SparseVector(val indices: IntArray, val values: FloatArray) {
     }
 }
 
-/** Sender facts for metadata features 21-26 (always false offline). */
+/** Sender facts for metadata features 21-26 (always false for offline corpus messages, even ones with a sender). */
 data class SenderFeatures(
     val kind: SenderKind = SenderKind.UNKNOWN,
     val nanp: Boolean = false,
@@ -51,8 +53,9 @@ data class SenderFeatures(
     }
 }
 
-/** feat_v1 (ml/SPEC.md): mirrors ml/src/smsml/features.py. */
+/** feat_v2 (ml/SPEC.md): mirrors ml/src/smsml/features.py. */
 object Features {
+    const val VERSION = "feat_v2"
     const val BITS = 18
     const val BUCKETS = 1 shl BITS
     const val MASK = BUCKETS - 1
@@ -93,22 +96,56 @@ object Features {
         return out
     }
 
-    /** (char, word, url) feature-string families, each deduplicated and sorted. */
-    fun featureStrings(n: Normalized): List<Collection<String>> {
-        val s = " " + n.ng + " "
-        val chars = TreeSet<String>()
-        for (k in 3..5) for (i in 0..s.length - k) chars.add("c:" + s.substring(i, i + k))
+    /**
+     * sid (ml/SPEC.md): the identity of a normalized sender key ([dev.ashik.sift.spamcore.SenderInfo.key]), or null.
+     * An Indian DLT header `AX-ICICIT-S` is its sender ID `ICICIT` (the route prefix varies per message; the category
+     * suffix is not used); any other key is itself, with unpaired surrogates as U+FFFD.
+     */
+    fun senderId(key: String?): String? {
+        if (key.isNullOrEmpty() || key == "unknown") return null
+        val parts = key.split('-')
+        val dlt = parts.size in 2..3 &&
+            parts[0].length == 2 && parts[0].all { it in 'A'..'Z' } &&
+            parts[1].length in 3..8 && parts[1].all { it in 'A'..'Z' || it in '0'..'9' } &&
+            (parts.size == 2 || (parts[2].length == 1 && parts[2][0] in 'A'..'Z'))
+        return when {
+            dlt -> parts[1]
+            key.none { it.isSurrogate() } -> key
+            else -> buildString { key.codePoints().forEach { appendCodePoint(if (it in 0xD800..0xDFFF) 0xFFFD else it) } }
+        }
+    }
+
+    fun wordStrings(n: Normalized): TreeSet<String> {
         val toks = wordTokens(n.ng)
         val words = TreeSet<String>()
         for (t in toks) words.add("w:$t")
         for (i in 0 until toks.size - 1) words.add("b:" + toks[i] + " " + toks[i + 1])
+        return words
+    }
+
+    fun urlStrings(n: Normalized): TreeSet<String> {
         val urls = TreeSet<String>()
         for (u in n.urls) {
             urls.add("u:" + u.domain)
             urls.add("h:" + u.host)
             if (u.tld.isNotEmpty()) urls.add("t:" + u.tld)
         }
-        return listOf(chars, words, urls)
+        return urls
+    }
+
+    /** (char, word, url) feature-string families, each deduplicated and sorted. */
+    fun featureStrings(n: Normalized): List<Collection<String>> {
+        val s = " " + n.ng + " "
+        val chars = TreeSet<String>()
+        for (k in 3..5) for (i in 0..s.length - k) chars.add("c:" + s.substring(i, i + k))
+        return listOf(chars, wordStrings(n), urlStrings(n))
+    }
+
+    /** The SND family: "s:" + sid + "|" + each WORD string and each URL `u:` string; none without a sid. */
+    fun sndStrings(sid: String?, n: Normalized): List<String> {
+        if (sid == null) return emptyList()
+        val prefix = "s:$sid|"
+        return (wordStrings(n) + urlStrings(n).filter { it.startsWith("u:") }).map { prefix + it }
     }
 
     /** Returns (bucket index, sign). */
@@ -144,6 +181,31 @@ object Features {
         for ((k, x) in total) {
             idx[i] = k
             vals[i] = x.toFloat()
+            i++
+        }
+        return SparseVector(idx, vals)
+    }
+
+    /**
+     * The SND vector (sender × content): ±1 per [sndStrings] string summed per bucket, zeros dropped, L2-normalized,
+     * no idf. Separate from [sparse], which alone drives near-duplicate similarity.
+     */
+    fun snd(sid: String?, n: Normalized): SparseVector {
+        val v = TreeMap<Int, Int>()
+        for (f in sndStrings(sid, n)) {
+            val (idx, sign) = hashFeature(f)
+            v[idx] = (v[idx] ?: 0) + sign
+        }
+        v.entries.removeIf { it.value == 0 }
+        var sq = 0.0
+        for (x in v.values) sq += x.toDouble() * x
+        val norm = sqrt(sq)
+        val idx = IntArray(v.size)
+        val vals = FloatArray(v.size)
+        var i = 0
+        for ((k, x) in v) {
+            idx[i] = k
+            vals[i] = (x / norm).toFloat()
             i++
         }
         return SparseVector(idx, vals)

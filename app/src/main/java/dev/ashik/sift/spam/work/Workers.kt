@@ -13,6 +13,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import dev.ashik.sift.R
 import dev.ashik.sift.SiftApp
 import dev.ashik.sift.data.db.ClassState
 import dev.ashik.sift.data.db.LabelCode
@@ -22,7 +23,7 @@ import dev.ashik.sift.spamcore.Reason
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
-/** Enqueues the app's background work (all unique; all but a rescan, which runs in the foreground, stay well under 10 minutes). */
+/** Enqueues the app's background work (all unique; all but a rescan or re-check, which run in the foreground, stay well under 10 minutes). */
 class WorkScheduler(private val context: Context) {
     private val wm get() = WorkManager.getInstance(context)
 
@@ -39,6 +40,11 @@ class WorkScheduler(private val context: Context) {
             .setInputData(workDataOf(BackfillClassifyWorker.KEY_RESCAN to rescan, BackfillClassifyWorker.KEY_STARTED to System.currentTimeMillis()))
             .build()
         wm.enqueueUniqueWork(BACKFILL, if (rescan) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
+    }
+
+    /** Re-checks all history with the model a retrain just produced, replacing a re-check still running for an older one. */
+    fun enqueueRecheck() {
+        wm.enqueueUniqueWork("recheck", ExistingWorkPolicy.REPLACE, OneTimeWorkRequestBuilder<RecheckWorker>().build())
     }
 
     fun enqueueClassifyPending() {
@@ -105,7 +111,10 @@ class BackfillClassifyWorker(context: Context, params: WorkerParameters) : Corou
         notifier.cancelScanDone() // the previous rescan's summary is out of date now
         try {
             setForeground(
-                ForegroundInfo(notifier.scanNotificationId(id), notifier.scanProgress(id, 0, 0), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC),
+                ForegroundInfo(
+                    notifier.scanNotificationId(id), notifier.scanProgress(id, R.string.scan_progress_title, 0, 0),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                ),
             )
         } catch (e: CancellationException) {
             throw e
@@ -131,7 +140,7 @@ class BackfillClassifyWorker(context: Context, params: WorkerParameters) : Corou
                     setProgress(workDataOf(KEY_DONE to done, KEY_TOTAL to total))
                     val now = SystemClock.elapsedRealtime()
                     if (now - noticeAt >= NOTICE_INTERVAL_MS) {
-                        notifier.updateScanProgress(id, done, total)
+                        notifier.updateScanProgress(id, R.string.scan_progress_title, done, total)
                         noticeAt = now
                     }
                     if (isStopped) return Result.retry()
@@ -170,6 +179,56 @@ class BackfillClassifyWorker(context: Context, params: WorkerParameters) : Corou
         const val LIMIT = 5000
         private const val NOTICE_INTERVAL_MS = 500L
         private const val TAG = "SiftRescan"
+    }
+}
+
+/**
+ * After a retrain: re-checks every incoming message without a user label, newest first, so what the user just taught
+ * applies to all of history. The same rules as any re-score apply (model-only verdicts never move an Inbox message to
+ * Spam). Shows its progress in a notification and runs as a foreground service when Android allows it; the next
+ * retrain's re-check replaces one still running.
+ */
+class RecheckWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val graph = (applicationContext as SiftApp).graph
+        if (!graph.role.isHeldNow()) return Result.success()
+        val notifier = graph.notifier
+        try {
+            setForeground(
+                ForegroundInfo(
+                    notifier.scanNotificationId(id), notifier.scanProgress(id, R.string.recheck_progress_title, 0, 0),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IllegalStateException) {
+            // The app went to the background before the work started; the progress updates below post the notice.
+            Log.w(TAG, "re-check running without a foreground service", e)
+        }
+        try {
+            val ids = graph.db.messages().unlabeledIncomingIds()
+            var done = 0
+            var noticeAt = 0L
+            for (chunk in ids.chunked(64)) {
+                graph.rescore.afterRetrain(chunk)
+                done += chunk.size
+                val now = SystemClock.elapsedRealtime()
+                if (now - noticeAt >= NOTICE_INTERVAL_MS) {
+                    notifier.updateScanProgress(id, R.string.recheck_progress_title, done, ids.size)
+                    noticeAt = now
+                }
+                if (isStopped) return Result.retry()
+            }
+            return Result.success()
+        } finally {
+            notifier.cancelScanProgress(id)
+        }
+    }
+
+    private companion object {
+        const val NOTICE_INTERVAL_MS = 500L
+        const val TAG = "SiftRecheck"
     }
 }
 

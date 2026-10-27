@@ -11,6 +11,7 @@ import dev.ashik.sift.spamcore.features.Features
 import dev.ashik.sift.spamcore.head.LinearHead
 import dev.ashik.sift.spamcore.model.ModelBundle
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -58,6 +59,7 @@ class BundleParityTest {
             val ids = bundle.tokenizer.encode(n.enc)
             if (ids.toList() != c["ids"]!!.jsonArray.map { it.jsonPrimitive.long }) { failures += "case $i: ids"; continue }
             val sparse = Features.sparse(n, head.idf)
+            val snd = Features.snd(Features.senderId(c["sender"]!!.jsonPrimitive.contentOrNull), n)
             val meta = Features.metadata(n)
             val s = SystemClock.elapsedRealtimeNanos()
             val emb = encoder.embed(ids)
@@ -68,7 +70,7 @@ class BundleParityTest {
             var nb = 0.0
             for (k in py.indices) { dot += py[k].toDouble() * emb[k]; na += py[k].toDouble() * py[k]; nb += emb[k].toDouble() * emb[k] }
             minCos = minOf(minCos, dot / sqrt(na * nb))
-            val p = LinearHead.sigmoid(head.z(emb, meta, sparse))
+            val p = LinearHead.sigmoid(head.z(emb, meta, sparse, snd))
             val pPy = c["p"]!!.jsonPrimitive.double
             dps += abs(p - pPy)
             if ((p >= threshold) != (pPy >= threshold)) flips++
