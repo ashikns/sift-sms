@@ -2,11 +2,13 @@ package dev.ashik.sift
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.LinkAnnotation
+import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MsgStatus
 import dev.ashik.sift.outgoing.PartAggregator
 import dev.ashik.sift.spam.CueCodec
 import dev.ashik.sift.spam.EmbeddingCodec
+import dev.ashik.sift.spam.FolderMoves
 import dev.ashik.sift.spam.FolderPolicy
 import dev.ashik.sift.spam.LatencyStats
 import dev.ashik.sift.spam.RescoreService
@@ -53,6 +55,14 @@ class FolderAndRescoreTest {
         assertEquals(1, FolderPolicy.folderOf(LabelCode.SPAM))
         assertEquals(0, FolderPolicy.folderOf(LabelCode.SUSPICIOUS))
         assertEquals(0, FolderPolicy.folderOf(null))
+    }
+
+    @Test
+    fun `rescan summary counts conversations that changed folders`() {
+        val before = mapOf(1L to Folder.INBOX, 2L to Folder.SPAM, 3L to Folder.INBOX, 4L to Folder.SPAM)
+        val after = mapOf(1L to Folder.SPAM, 2L to Folder.INBOX, 3L to Folder.INBOX, 5L to Folder.SPAM)
+        assertEquals(FolderMoves(toSpam = 1, toInbox = 1), FolderMoves.between(before, after))
+        assertEquals(FolderMoves(0, 0), FolderMoves.between(before, before))
     }
 
     private fun v(label: SpamLabel, reason: Reason, p: Float = Float.NaN) = Verdict(label, p, reason)

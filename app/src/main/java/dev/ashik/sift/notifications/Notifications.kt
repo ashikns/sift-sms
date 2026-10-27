@@ -1,5 +1,6 @@
 package dev.ashik.sift.notifications
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -16,12 +17,15 @@ import androidx.core.content.LocusIdCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import androidx.work.WorkManager
 import dev.ashik.sift.R
 import dev.ashik.sift.data.db.AppDatabase
+import dev.ashik.sift.spam.FolderMoves
 import dev.ashik.sift.telephony.receiver.NotificationActionReceiver
 import dev.ashik.sift.ui.MainActivity
 import kotlinx.coroutines.flow.first
 import java.util.Locale
+import java.util.UUID
 
 /** The thread the user is looking at right now (set by the thread screen while resumed). */
 class VisibleThreadTracker {
@@ -36,6 +40,7 @@ object Channels {
     const val SPAM = "spam"
     const val SEND_FAILURES = "send_failures"
     const val MMS = "mms_unsupported"
+    const val SCAN = "scan"
 }
 
 /** Long-lived conversation shortcuts so message notifications appear in the system's Conversations section. */
@@ -81,6 +86,8 @@ class MessageNotifier(
                 NotificationChannel(Channels.SEND_FAILURES, context.getString(R.string.channel_failures), NotificationManager.IMPORTANCE_DEFAULT),
                 NotificationChannel(Channels.MMS, context.getString(R.string.channel_mms), NotificationManager.IMPORTANCE_DEFAULT)
                     .apply { description = context.getString(R.string.channel_mms_desc) },
+                NotificationChannel(Channels.SCAN, context.getString(R.string.channel_scan), NotificationManager.IMPORTANCE_LOW)
+                    .apply { description = context.getString(R.string.channel_scan_desc) },
             ),
         )
     }
@@ -162,7 +169,62 @@ class MessageNotifier(
         manager.cancel(TAG_SPAM, threadId.toInt())
     }
 
-    private fun post(tag: String, id: Long, builder: NotificationCompat.Builder) {
+    /**
+     * Id of a rescan's progress notice: untagged, like a foreground-service notification, and one per work request so
+     * a replaced rescan can't clear its successor's.
+     */
+    fun scanNotificationId(workId: UUID): Int = workId.hashCode().takeIf { it != 0 } ?: 1
+
+    /** The rescan's ongoing progress notice, also its foreground-service notification ([total] 0 while counting). */
+    fun scanProgress(workId: UUID, done: Int, total: Int): Notification = scanProgressBuilder(workId, done, total).build()
+
+    fun updateScanProgress(workId: UUID, done: Int, total: Int) =
+        post(null, scanNotificationId(workId).toLong(), scanProgressBuilder(workId, done, total))
+
+    /** Removes the notice when the rescan ran as a plain job; a foreground service's notice leaves with the service. */
+    fun cancelScanProgress(workId: UUID) = manager.cancel(scanNotificationId(workId))
+
+    fun cancelScanDone() = manager.cancel(TAG_SCAN_DONE, 0)
+
+    /** The rescan's summary; [moves] is null when the rescan was interrupted and resumed, so it can't tell. */
+    fun notifyScanDone(checked: Int, moves: FolderMoves?) {
+        val r = context.resources
+        val parts = mutableListOf(r.getQuantityString(R.plurals.scan_done_checked, checked, checked))
+        when {
+            moves == null -> Unit
+            moves.toSpam == 0 && moves.toInbox == 0 -> parts += context.getString(R.string.scan_done_unchanged)
+            else -> {
+                if (moves.toSpam > 0) parts += r.getQuantityString(R.plurals.scan_done_to_spam, moves.toSpam, moves.toSpam)
+                if (moves.toInbox > 0) parts += r.getQuantityString(R.plurals.scan_done_to_inbox, moves.toInbox, moves.toInbox)
+            }
+        }
+        val text = parts.joinToString(" ")
+        val builder = NotificationCompat.Builder(context, Channels.SCAN)
+            .setSmallIcon(R.drawable.ic_stat_message)
+            .setContentTitle(context.getString(R.string.scan_done_title))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(openApp())
+            .setAutoCancel(true)
+            .setSilent(true)
+        post(TAG_SCAN_DONE, 0, builder)
+    }
+
+    private fun scanProgressBuilder(workId: UUID, done: Int, total: Int) = NotificationCompat.Builder(context, Channels.SCAN)
+        .setSmallIcon(R.drawable.ic_stat_message)
+        .setContentTitle(context.getString(R.string.scan_progress_title))
+        .setContentText(if (total > 0) context.getString(R.string.scan_progress_text, done, total) else null)
+        .setProgress(total, done, total == 0)
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setSilent(true)
+        .setShowWhen(false)
+        .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+        .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+        .setContentIntent(openApp())
+        .addAction(0, context.getString(R.string.action_stop), WorkManager.getInstance(context).createCancelPendingIntent(workId))
+
+    private fun post(tag: String?, id: Long, builder: NotificationCompat.Builder) {
         if (!manager.areNotificationsEnabled()) return
         try {
             manager.notify(tag, id.toInt(), builder.build())
@@ -170,6 +232,11 @@ class MessageNotifier(
             // POST_NOTIFICATIONS revoked: nothing to do.
         }
     }
+
+    private fun openApp(): PendingIntent = PendingIntent.getActivity(
+        context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     private fun openThread(threadId: Long): PendingIntent = PendingIntent.getActivity(
         context, threadId.toInt(), MainActivity.threadIntent(context, threadId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -212,5 +279,6 @@ class MessageNotifier(
         const val TAG_SPAM = "spam"
         const val TAG_FAILED = "failed"
         const val TAG_MMS = "mms"
+        const val TAG_SCAN_DONE = "scan_done"
     }
 }

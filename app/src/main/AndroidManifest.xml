@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- A rescan runs as a foreground service (WorkManager long-running work) with a progress notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Fully offline: strip INTERNET even if a library declares it (the build also verifies this). -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
@@ -113,5 +116,10 @@
         <receiver
             android:name=".telephony.receiver.NotificationActionReceiver"
             android:exported="false" />
+        <!-- WorkManager's foreground service, used by rescans (classifying stored messages on the device). -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 </manifest>

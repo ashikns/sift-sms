@@ -9,6 +9,8 @@
     <string name="channel_failures">Sending problems</string>
     <string name="channel_mms">Unsupported messages</string>
     <string name="channel_mms_desc">Picture and group messages (MMS) that Sift can\'t receive</string>
+    <string name="channel_scan">Rescans</string>
+    <string name="channel_scan_desc">Progress while Sift checks your messages again</string>
 
     <!-- Notifications -->
     <string name="notification_me">You</string>
@@ -45,10 +47,11 @@
     <string name="settings">Settings</string>
     <string name="empty_inbox">No conversations yet</string>
     <string name="empty_spam">No spam. Messages Sift filters out will show up here.</string>
-    <string name="scanning">Checking %1$d of %2$d messages for spam…</string>
+    <string name="scanning">Checking %1$,d of %2$,d messages for spam…</string>
     <string name="selected_count">%1$d selected</string>
     <string name="action_delete">Delete</string>
     <string name="action_cancel">Cancel</string>
+    <string name="action_stop">Stop</string>
     <string name="action_undo">Undo</string>
     <string name="action_back">Back</string>
     <string name="action_more">More options</string>
@@ -131,8 +134,24 @@
     <string name="delivery_reports_desc">Ask your carrier to confirm each text was delivered</string>
     <string name="settings_learning">Learning</string>
     <string name="rescan">Rescan messages</string>
-    <string name="rescan_desc">Check the last 90 days again with the current model and settings</string>
-    <string name="rescan_started">Rescanning messages…</string>
+    <string name="rescan_desc">Check every message again with the current model and settings</string>
+    <string name="rescan_started">Rescanning all messages…</string>
+    <string name="scan_progress_title">Rescanning messages</string>
+    <string name="scan_progress_text">%1$,d of %2$,d checked</string>
+    <string name="scan_done_title">Rescan complete</string>
+    <plurals name="scan_done_checked">
+        <item quantity="one">Checked %1$,d message.</item>
+        <item quantity="other">Checked %1$,d messages.</item>
+    </plurals>
+    <plurals name="scan_done_to_spam">
+        <item quantity="one">%1$,d conversation moved to Spam.</item>
+        <item quantity="other">%1$,d conversations moved to Spam.</item>
+    </plurals>
+    <plurals name="scan_done_to_inbox">
+        <item quantity="one">%1$,d conversation moved to Inbox.</item>
+        <item quantity="other">%1$,d conversations moved to Inbox.</item>
+    </plurals>
+    <string name="scan_done_unchanged">No conversations changed folders.</string>
     <string name="reset_learning">Reset learning</string>
     <string name="reset_learning_desc">Forget everything Sift learned from your marks</string>
     <string name="reset_title">Reset learning?</string>

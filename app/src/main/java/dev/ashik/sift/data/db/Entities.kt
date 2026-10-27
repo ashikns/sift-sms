@@ -185,4 +185,6 @@ data class MessageKey(
 
 data class FolderCount(val folder: Int, val conversations: Int, val unread: Int)
 
+data class ThreadFolder(val threadId: Long, val folder: Int)
+
 data class WeekCount(val week: Long, val count: Int)

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Smoke test of the minified release build on the emulator. e2e.sh drives the debug build, which R8 never touches, so it can't see
 # release-only breakage: R8 once deleted the field that keeps the memory-mapped encoder alive, and ONNX Runtime then read freed memory
-# (SIGSEGV) after the next GC. This launches the release app, runs Settings → Rescan messages, moves the app to the background (ART
-# compacts its heap) and delivers a burst of SMS that all need the encoder. Fails on any crash. Emulator only.
+# (SIGSEGV) after the next GC. This launches the release app, runs Settings → Rescan messages (a foreground service with notifications),
+# moves the app to the background (ART compacts its heap) and delivers a burst of SMS that all need the encoder. Fails on any crash.
+# Emulator only.
 #
 #   scripts/release_smoke.sh
 #   SKIP_INSTALL=1 scripts/release_smoke.sh
@@ -76,6 +77,10 @@ $A logcat -b main -c  # just main: the crash and system buffers must keep the wh
 tap "Settings" && sleep 1 && tap "Rescan messages" && pass "tapped Settings → Rescan messages" || fail "couldn't reach Rescan messages"
 rescanned() { $A logcat -d -s WM-WorkerWrapper:I | grep -F "Worker result SUCCESS" | grep -F BackfillClassifyWorker >/dev/null; }
 wait_until 60 rescanned && pass "rescan finished" || fail "no successful BackfillClassifyWorker run"
+in_foreground() { $A logcat -d -s WM-Processor:D | grep -F "to the foreground" >/dev/null; }
+in_foreground && pass "rescan ran as a foreground service" || fail "rescan didn't move to the foreground"
+scan_done() { notified "Rescan complete"; }
+wait_until 10 scan_done && pass "rescan posted its summary notification" || fail "no rescan summary notification"
 same_process && pass "survived the rescan" || fail "process died during the rescan"
 
 step "Background + SMS burst"

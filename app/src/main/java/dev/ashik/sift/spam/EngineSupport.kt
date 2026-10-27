@@ -128,6 +128,22 @@ object FolderPolicy {
         if (latestIncomingEffective == LabelCode.SPAM) dev.ashik.sift.data.db.Folder.SPAM else dev.ashik.sift.data.db.Folder.INBOX
 }
 
+/** Conversations a rescan moved between Inbox and Spam (ones that appeared or disappeared meanwhile don't count). */
+data class FolderMoves(val toSpam: Int, val toInbox: Int) {
+    companion object {
+        /** [before] and [after] map thread ids to folders. */
+        fun between(before: Map<Long, Int>, after: Map<Long, Int>): FolderMoves {
+            var toSpam = 0
+            var toInbox = 0
+            for ((threadId, was) in before) {
+                val now = after[threadId] ?: continue
+                if (now != was) if (now == dev.ashik.sift.data.db.Folder.SPAM) toSpam++ else toInbox++
+            }
+            return FolderMoves(toSpam, toInbox)
+        }
+    }
+}
+
 /** Classification latencies (ms) of encoder runs since process start, for the model stats screen. */
 class LatencyStats(private val capacity: Int = 512) {
     private val samples = LongArray(capacity)

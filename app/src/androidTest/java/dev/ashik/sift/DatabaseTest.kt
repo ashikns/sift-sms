@@ -10,6 +10,7 @@ import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MessageEntity
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.Source
+import dev.ashik.sift.data.db.ThreadFolder
 import dev.ashik.sift.data.repo.ConversationProjector
 import dev.ashik.sift.spamcore.UserLabel
 import kotlinx.coroutines.flow.first
@@ -93,6 +94,36 @@ class DatabaseTest {
         assertEquals(LabelCode.SPAM, rows[0].effectiveLabel)
         assertEquals(0.97f, rows[0].modelScore!!, 1e-6f)
         assertEquals(LabelCode.HAM, rows[2].effectiveLabel) // no verdict yet: not spam
+    }
+
+    @Test
+    fun rescanCoversEveryUnlabeledIncomingMessageAndResumes() = runBlocking {
+        db.messages().upsertAll(
+            listOf(
+                msg(1, 10, MsgType.INBOX, 1000), // decades old, never classified
+                msg(2, 10, MsgType.INBOX, 2000), // classified before the rescan started
+                msg(3, 10, MsgType.INBOX, 3000), // classified again after it started
+                msg(4, 10, MsgType.INBOX, 4000), // pending: ClassifyPendingWorker's
+                msg(5, 10, MsgType.INBOX, 5000), // the user's label decides
+                msg(6, 10, MsgType.SENT, 6000),
+            ),
+        )
+        db.classifications().upsertAll(
+            listOf(
+                ClassificationEntity(2, ClassState.DONE, effectiveSource = Source.ENGINE, classifiedAt = 100),
+                ClassificationEntity(3, ClassState.DONE, effectiveSource = Source.ENGINE, classifiedAt = 600),
+                ClassificationEntity(4, ClassState.PENDING),
+                ClassificationEntity(
+                    5, ClassState.DONE, userLabel = UserLabel.SPAM.ordinal, effectiveLabel = LabelCode.SPAM,
+                    effectiveSource = Source.USER, classifiedAt = 100,
+                ),
+            ),
+        )
+        assertEquals(3, db.messages().rescanCount())
+        assertEquals(listOf(2L, 1L), db.messages().rescanRemainingIds(startedAt = 500))
+        assertEquals(listOf(3L, 2L, 1L), db.messages().rescanRemainingIds(startedAt = 1000))
+        projector.rebuildAll()
+        assertEquals(listOf(ThreadFolder(10, Folder.SPAM)), db.conversations().folders())
     }
 
     @Test

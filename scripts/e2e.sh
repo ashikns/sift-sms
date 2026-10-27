@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end checks on the emulator: real SMS delivery (adb emu sms send), spam placement, notifications,
-# multipart, learning from feedback, Undo, role loss + reconcile, Doze. Emulator only.
+# multipart, learning from feedback, Undo, a rescan of all history, role loss + reconcile, Doze. Emulator only.
 #
 #   scripts/emulator.sh          # boot the AVD (once)
 #   scripts/e2e.sh               # build + install the debug app, run every scenario
@@ -118,6 +118,37 @@ BATCH=$(call markSpam "thread:$T1" | grep -oE 'batchId=[0-9]+' | cut -d= -f2)
 folder_is "$(num 1)" 1 && pass "mark spam" || fail "mark spam folder=$(conv_field "$(num 1)" folder)"
 call undo "$BATCH" >/dev/null
 folder_is "$(num 1)" 0 && pass "undo restores Inbox" || fail "after undo folder=$(conv_field "$(num 1)" folder)"
+
+step "Rescan all history"
+# History older than the automatic backfill's 90 days: only a rescan classifies it.
+seed_stat() { call seedStats | grep -oE "$1=[0-9]+" | cut -d= -f2; }
+SEEDED=$(call seedHistory 800 | grep -oE 'seeded=[0-9]+' | cut -d= -f2)
+[[ "${SEEDED:-0}" -eq 800 && "$(seed_stat classified)" -eq 0 ]] \
+  && pass "seeded 800 unclassified messages from 100-400 days ago" || fail "seedHistory=$SEEDED classified=$(seed_stat classified)"
+scan_dump() { $A shell dumpsys notification --noredact 2>/dev/null | tr -d '\r' | grep -A40 "pkg=$PKG"; }
+scan_progress() { local d; d=$(scan_dump); [[ "$d" == *"Rescanning messages"* && "$d" == *android.progressMax* ]]; }
+no_scan_progress() { ! scan_progress; }
+scan_foreground() {
+  local d; d=$($A shell dumpsys activity services "$PKG" 2>/dev/null | tr -d '\r')
+  [[ "$d" == *SystemForegroundService* && "$d" == *"isForeground=true"* ]]
+}
+scan_done() { notified "Rescan complete"; }
+# Started with the UI showing, as from Settings: Android only lets a visible app start a foreground service.
+$A shell am start -W -n "$PKG/.ui.MainActivity" >/dev/null
+call rescan >/dev/null
+wait_until 15 scan_progress && pass "progress notification while rescanning" || fail "no rescan progress notification"
+scan_foreground && pass "rescan runs as a foreground service" || fail "rescan isn't running in the foreground"
+wait_until 180 scan_done && pass "summary notification when done" || fail "no rescan summary notification"
+notified "moved to Spam" && pass "summary counts conversations moved to Spam" \
+  || fail "summary: $(scan_dump | grep -m1 -oE 'android.bigText=[^)]*')"
+wait_until 10 no_scan_progress && pass "progress notification removed" || fail "progress notification left behind"
+[[ "$(seed_stat classified)" -eq 800 ]] && pass "rescan classified all 800 old messages" || fail "classified $(seed_stat classified) of 800"
+SCAMS=$(seed_stat scams)
+FLAGGED=$(seed_stat scamsFlagged)
+WRONG=$(seed_stat ordinaryFlagged)
+(( FLAGGED * 10 >= SCAMS * 9 )) && pass "old scams now in Spam ($FLAGGED of $SCAMS)" || fail "old scams in Spam: $FLAGGED of $SCAMS"
+(( WRONG * 10 <= 800 - SCAMS )) && pass "old ordinary texts mostly stay out of Spam ($WRONG flagged)" || fail "ordinary texts in Spam: $WRONG"
+$A shell input keyevent KEYCODE_HOME
 
 step "Role loss and reconcile"
 GM=com.google.android.apps.messaging

@@ -104,11 +104,21 @@ interface MessageDao {
     )
     suspend fun unclassifiedIncomingIds(since: Long, limit: Int): List<Long>
 
+    /** Incoming messages a rescan covers: every one without a user label, except pending ones (ClassifyPendingWorker's). */
+    @Query(
+        "SELECT COUNT(*) FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
+            "WHERE m.type = 1 AND c.userLabel IS NULL AND (c.messageId IS NULL OR c.state != 0)",
+    )
+    suspend fun rescanCount(): Int
+
+    /** The [rescanCount] messages not classified again since [startedAt], newest first. */
     @Query(
         "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
-            "WHERE m.type = 1 AND m.date >= :since AND (c.userLabel IS NULL) ORDER BY m.date DESC, m.id DESC LIMIT :limit",
+            "WHERE m.type = 1 AND c.userLabel IS NULL AND " +
+            "(c.messageId IS NULL OR (c.state != 0 AND COALESCE(c.classifiedAt, 0) < :startedAt)) " +
+            "ORDER BY m.date DESC, m.id DESC",
     )
-    suspend fun rescanCandidateIds(since: Long, limit: Int): List<Long>
+    suspend fun rescanRemainingIds(startedAt: Long): List<Long>
 
     @Query("SELECT * FROM messages WHERE type IN (4, 6) AND date < :before")
     suspend fun staleOutbox(before: Long): List<MessageEntity>
@@ -214,6 +224,9 @@ interface ConversationDao {
 
     @Query("SELECT * FROM conversations ORDER BY latestDate DESC")
     suspend fun all(): List<ConversationEntity>
+
+    @Query("SELECT threadId, folder FROM conversations")
+    suspend fun folders(): List<ThreadFolder>
 
     @Query(
         "SELECT folder, COUNT(*) AS conversations, SUM(CASE WHEN unreadCount > 0 THEN 1 ELSE 0 END) AS unread " +
