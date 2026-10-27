@@ -143,7 +143,8 @@ call undo "$BATCH" >/dev/null
 folder_is "$(num 1)" 0 && pass "undo restores Inbox" || fail "after undo folder=$(conv_field "$(num 1)" folder)"
 
 step "Learning entries"
-# Deleting an entry only takes effect, with one retrain, once the page is left.
+# Deleting an entry only takes effect, with one retrain, once the page is left: the engine forgets it and the
+# message loses its mark.
 idle
 EX0=$(engine_field examples)
 V0=$(engine_field modelVersion)
@@ -163,7 +164,10 @@ wait_until 20 retrained && pass "leaving the page forgets the entry and retrains
   || fail "after leaving: examples=$(engine_field examples) version=$(engine_field modelVersion) (was $EX0, $V0)"
 wait_until 20 folder_is "$(num 5)" 0 && pass "the near-duplicate it had pulled into Spam returns to Inbox" \
   || fail "near-duplicate folder=$(conv_field "$(num 5)" folder) reason=$(msg_field "$(num 5)" reason)"
-folder_is "$(num 4)" 1 && pass "the marked message keeps its Spam label" || fail "marked message folder=$(conv_field "$(num 4)" folder)"
+# The mark goes too: the message is judged again by the retrained model, which misses this opener on its own.
+unmarked() { local u; u=$(msg_field "$(num 4)" userLabel); [[ -z "$u" || "$u" == "NULL" ]] && folder_is "$(num 4)" 0; }
+wait_until 20 unmarked && pass "the deleted entry's message loses its mark and gets the model's own verdict" \
+  || fail "after deleting its entry: userLabel=$(msg_field "$(num 4)" userLabel) folder=$(conv_field "$(num 4)" folder) reason=$(msg_field "$(num 4)" reason)"
 $A shell input keyevent KEYCODE_BACK
 $A shell input keyevent KEYCODE_HOME
 
@@ -207,12 +211,14 @@ R0=$(rechecks)
 F0=$(seed_stat scamsFlagged)
 # (Matched here: the device shell strips quotes inside --where, and a "+" number then compares as a number.)
 SEED0=$($A shell content query --uri content://sms --projection _id:address 2>/dev/null | tr -d '\r' | grep -E "address=\+15550190000$" | field _id)
-call markNotSpam "$SEED0" >/dev/null
+BATCH0=$(call markNotSpam "$SEED0" | grep -oE 'batchId=[0-9]+' | cut -d= -f2)
 wait_until 30 recheck_progress && pass "re-check progress notification" || fail "no re-check progress notification"
 recheck_ran() { [[ "$(rechecks)" -gt "$R0" ]]; }
 wait_until 120 recheck_ran && pass "a re-check of all history ran after the retrain" || fail "no re-check after the mark"
 F1=$(seed_stat scamsFlagged)
 (( F1 <= F0 - 100 )) && pass "the re-check moved old copies out of Spam ($F0 -> $F1 flagged)" || fail "old copies still flagged: $F0 -> $F1"
+# Leave no "not spam" mark on a template that release_smoke.sh sends as spam.
+call undo "$BATCH0" >/dev/null
 $A shell input keyevent KEYCODE_HOME
 
 step "Role loss and reconcile"

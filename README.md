@@ -40,6 +40,8 @@ plain text, never clickable; long-press a message to select and copy all or part
      another sender's similar text.
    - Then every message is re-checked with the new model, old ones included; the progress shows in the notification
      shade.
+   - Deleting an entry under Settings → Learning entries removes that mark: Sift forgets it, retrains, and judges the
+     message again on its own.
    - The embedding weights, message-feature weights and sender-type signals stay fixed. That way a mark on one
      short-code promo doesn't shift every short-code message.
    - After an app update ships a new model, your marks are re-applied to it automatically.

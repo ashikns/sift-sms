@@ -67,8 +67,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * The user's marks the engine learns from. Deleting one only hides it here; the engine forgets everything deleted, and
- * retrains once, when the page closes (or the app goes to the background, so a killed process can't lose deletions).
+ * The user's marks the engine learns from. Deleting one only hides it here until the page closes (or the app goes to
+ * the background, so a killed process can't lose deletions): then the marks are removed, the engine forgets them and
+ * retrains once, and the messages get the retrained model's own verdict.
  */
 class LearningViewModel(private val graph: AppGraph) : ViewModel() {
     private val deleted = MutableStateFlow<Set<Long>>(emptySet())

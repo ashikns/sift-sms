@@ -171,6 +171,10 @@ interface ClassificationDao {
     @Query("UPDATE classifications SET notified = 1 WHERE messageId = :id")
     suspend fun markNotified(id: Long)
 
+    /** The user's labels are gone and the messages wait to be judged again (state 0, pending). */
+    @Query("UPDATE classifications SET userLabel = NULL, userLabeledAt = NULL, state = 0 WHERE messageId IN (:ids)")
+    suspend fun clearUserLabels(ids: List<Long>)
+
     @Query("DELETE FROM classifications WHERE messageId IN (:ids)")
     suspend fun deleteIds(ids: List<Long>)
 
@@ -247,6 +251,10 @@ interface FeedbackDao {
 
     @Query("UPDATE feedback_events SET undone = 1 WHERE batchId = :batchId")
     suspend fun markUndone(batchId: Long)
+
+    /** Marks whose learning entries were deleted: no longer counted, and no Undo brings them back. */
+    @Query("UPDATE feedback_events SET undone = 1 WHERE kind = 0 AND messageId IN (:ids)")
+    suspend fun retractMarks(ids: List<Long>)
 
     @Query("SELECT COUNT(*) FROM feedback_events WHERE kind = 0 AND undone = 0 AND label = :label")
     fun observeExplicitCount(label: Int): Flow<Int>

@@ -6,6 +6,8 @@ import dev.ashik.sift.data.db.AppDatabase
 import dev.ashik.sift.data.db.ClassState
 import dev.ashik.sift.data.db.ClassificationEntity
 import dev.ashik.sift.data.db.ContactCacheEntity
+import dev.ashik.sift.data.db.FeedbackEventEntity
+import dev.ashik.sift.data.db.FeedbackKind
 import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MessageEntity
@@ -140,6 +142,32 @@ class DatabaseTest {
         assertEquals(listOf(null, "Alex"), rows.map { it.displayName })
         assertEquals(listOf(UserLabel.HAM.ordinal, UserLabel.SPAM.ordinal), rows.map { it.label })
         assertEquals(listOf("BANK", "6505550001"), rows.map { it.address }) // the message's own address while it exists
+    }
+
+    @Test
+    fun deletingMarksClearsTheirLabelsAndStopsCountingThem() = runBlocking {
+        db.messages().upsertAll(listOf(msg(1, 10, MsgType.INBOX, 1000), msg(2, 10, MsgType.INBOX, 2000)))
+        db.classifications().upsertAll(
+            listOf(
+                ClassificationEntity(1, ClassState.DONE, userLabel = UserLabel.SPAM.ordinal, userLabeledAt = 5, effectiveLabel = LabelCode.SPAM, effectiveSource = Source.USER),
+                ClassificationEntity(2, ClassState.DONE, userLabel = UserLabel.HAM.ordinal, userLabeledAt = 6, effectiveLabel = LabelCode.HAM, effectiveSource = Source.USER),
+            ),
+        )
+        fun mark(id: Long, label: UserLabel) = FeedbackEventEntity(
+            batchId = id, kind = FeedbackKind.EXPLICIT, messageId = id, label = label.ordinal, prevUserLabel = null,
+            prevEffectiveLabel = LabelCode.HAM, prevEffectiveSource = Source.ENGINE, engineLabelAtMark = LabelCode.HAM, createdAt = id,
+        )
+        db.feedback().insertAll(listOf(mark(1, UserLabel.SPAM), mark(2, UserLabel.HAM)))
+        db.classifications().clearUserLabels(listOf(1L))
+        db.feedback().retractMarks(listOf(1L))
+        val cleared = db.classifications().get(1)!!
+        assertEquals(null, cleared.userLabel)
+        assertEquals(ClassState.PENDING, cleared.state) // judged again by the retrained model (or a restart's recovery)
+        assertEquals(1, db.classifications().pendingCount())
+        assertEquals(UserLabel.HAM.ordinal, db.classifications().get(2)!!.userLabel)
+        assertEquals(0, db.feedback().observeExplicitCount(UserLabel.SPAM.ordinal).first())
+        assertEquals(1, db.feedback().observeExplicitCount(UserLabel.HAM.ordinal).first())
+        assertEquals(emptyList<Long>(), db.feedback().activeBatch(1).map { it.messageId })
     }
 
     @Test

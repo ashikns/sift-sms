@@ -64,6 +64,19 @@ class RescoreService(
     /** After a retrain: re-scores these messages (RecheckWorker goes through all of history in chunks), no undo records. */
     suspend fun afterRetrain(messageIds: List<Long>): Outcome = rescore(db.messages().getAll(messageIds), batchId = null)
 
+    /**
+     * Messages whose mark was deleted: each gets the model's own verdict, applied as it comes (as a rescan does, without
+     * the re-score's move rules), unless it was marked again meanwhile.
+     */
+    suspend fun reclassify(messageIds: List<Long>) = lock.withLock {
+        for (chunk in messageIds.chunked(500)) {
+            for (m in db.messages().getAll(chunk)) {
+                val computed = coordinator.compute(m) ?: continue
+                if (computed.previous?.userLabel == null) coordinator.apply(computed)
+            }
+        }
+    }
+
     private suspend fun rescore(candidates: List<MessageEntity>, batchId: Long?): Outcome = lock.withLock {
         val updates = ArrayList<ClassificationEntity>()
         val events = ArrayList<FeedbackEventEntity>()
@@ -213,13 +226,28 @@ class FeedbackService(
     }
 
     /**
-     * Deletes learning entries. The engine forgets them (its near-duplicate memory at once) and retrains, then every
-     * message is re-checked, as after an Undo. The messages keep the user's labels: only the learning goes.
+     * Deletes learning entries and the marks behind them. The messages lose the user's label at once (pending, so a
+     * restart's recovery pass judges them if the process dies first) and the marks stop counting; the engine forgets
+     * them (its near-duplicate memory at once) and retrains. Then each message gets the retrained model's own verdict,
+     * and every other message is re-checked.
      */
     suspend fun forgetLearned(messageIds: Collection<Long>) {
         if (messageIds.isEmpty()) return
-        engine.forget(messageIds)
-        recheckAfterRetrain()
+        val ids = messageIds.toList()
+        rescore.lock.withLock {
+            db.withWriteTransaction {
+                for (chunk in ids.chunked(500)) {
+                    db.classifications().clearUserLabels(chunk)
+                    db.feedback().retractMarks(chunk)
+                }
+            }
+        }
+        engine.forget(ids)
+        appScope.launch {
+            engine.awaitIdle()
+            rescore.reclassify(ids)
+            scheduler.enqueueRecheck()
+        }
     }
 
     private suspend fun example(m: MessageEntity, label: UserLabel, now: Long): TrainingExample {

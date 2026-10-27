@@ -130,7 +130,7 @@
     <string name="scan_done_unchanged">No conversations changed folders.</string>
     <string name="learning_entries">Learning entries</string>
     <string name="learning_entries_desc">See and delete what Sift learned from your marks</string>
-    <string name="learning_intro">Sift learns from each message you mark as spam or not spam. Delete an entry to stop it learning from that message; the message keeps your label. Sift retrains when you leave this page.</string>
+    <string name="learning_intro">Sift learns from each message you mark as spam or not spam. Deleting an entry removes your mark too: when you leave this page, Sift retrains and judges the message again on its own.</string>
     <plurals name="learning_count">
         <item quantity="one">%1$,d entry: %2$,d spam, %3$,d not spam</item>
         <item quantity="other">%1$,d entries: %2$,d spam, %3$,d not spam</item>
@@ -142,7 +142,7 @@
     <string name="learning_deleted">Entry deleted</string>
     <string name="learning_delete_all">Delete all</string>
     <string name="learning_delete_all_title">Delete all entries?</string>
-    <string name="learning_delete_all_text">When you leave this page, Sift forgets everything it learned from your marks and goes back to its original model. Messages you marked keep their labels.</string>
+    <string name="learning_delete_all_text">When you leave this page, Sift removes all your marks, goes back to its original model, and judges the messages you marked again on its own.</string>
     <string name="learning_deleted_all">All entries deleted</string>
     <string name="model_stats">Model stats</string>
     <string name="model_stats_desc">How Sift\'s spam model is doing</string>
