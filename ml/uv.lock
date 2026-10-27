@@ -1014,7 +1014,6 @@ dependencies = [
     { name = "scipy" },
     { name = "tokenizers" },
     { name = "torch" },
-    { name = "tqdm" },
     { name = "transformers" },
 ]
 
@@ -1040,7 +1039,6 @@ requires-dist = [
     { name = "scipy" },
     { name = "tokenizers" },
     { name = "torch", specifier = "==2.14.*" },
-    { name = "tqdm" },
     { name = "transformers", specifier = ">=5.20,<6" },
 ]
 

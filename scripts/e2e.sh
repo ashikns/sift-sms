@@ -88,8 +88,8 @@ $A shell am start -W -n "$PKG/.ui.MainActivity" >/dev/null
 sleep 2
 $A shell input keyevent KEYCODE_HOME
 idle
-# Learning persists across runs; start each run from the base model so "the model misses it" holds.
-call resetLearning >/dev/null
+# Learning persists across runs; forget it so each run starts from the base model and "the model misses it" holds.
+call forgetLearning >/dev/null
 
 step "Incoming ham and spam"
 HAM="Dinner at 7? I booked the usual place $RUN"
@@ -123,24 +123,21 @@ send_sms "$(num 4)" "$FAM_A"
 send_sms "$(num 5)" "$FAM_B"
 wait_until 15 folder_is "$(num 5)" 0 && pass "new scam family starts in Inbox (model misses it)" || fail "family B folder=$(conv_field "$(num 5)" folder)"
 idle
-T4=$(conv_field "$(num 4)" threadId)
-RES=$(call markSpam "thread:$T4")
+RES=$(call markSpam "$(msg_field "$(num 4)" id)")
 MOVED=$(echo "$RES" | grep -oE 'moved=[0-9]+' | cut -d= -f2)
 [[ "${MOVED:-0}" -ge 1 ]] && pass "marking spam moved $MOVED similar message(s)" || fail "markSpam result: $RES"
-folder_is "$(num 4)" 1 && pass "marked conversation moved to Spam" || fail "marked folder=$(conv_field "$(num 4)" folder)"
+folder_is "$(num 4)" 1 && pass "the marked message's conversation moved to Spam" || fail "marked folder=$(conv_field "$(num 4)" folder)"
 folder_is "$(num 5)" 1 && [[ "$(msg_field "$(num 5)" reason)" == "SIMILAR_TO_SPAM" ]] \
   && pass "near-duplicate moved with SIMILAR_TO_SPAM" || fail "family B reason=$(msg_field "$(num 5)" reason)"
 send_sms "$(num 6)" "$FAM_C"
 wait_until 15 folder_is "$(num 6)" 1 && pass "new variant from a new sender lands in Spam" || fail "family C folder=$(conv_field "$(num 6)" folder)"
 [[ "$(msg_field "$(num 6)" reason)" == "SIMILAR_TO_SPAM" ]] && pass "reason SIMILAR_TO_SPAM" || fail "family C reason=$(msg_field "$(num 6)" reason)"
 notified "$FAM_C" && fail "learned spam was notified" || pass "learned spam not notified"
-T6=$(conv_field "$(num 6)" threadId)
-call markNotSpam "thread:$T6" >/dev/null
+call markNotSpam "$(msg_field "$(num 6)" id)" >/dev/null
 folder_is "$(num 6)" 0 && pass "not spam moves it back to Inbox" || fail "after markNotSpam folder=$(conv_field "$(num 6)" folder)"
 
 step "Undo"
-T1=$(conv_field "$(num 1)" threadId)
-BATCH=$(call markSpam "thread:$T1" | grep -oE 'batchId=[0-9]+' | cut -d= -f2)
+BATCH=$(call markSpam "$(msg_field "$(num 1)" id)" | grep -oE 'batchId=[0-9]+' | cut -d= -f2)
 folder_is "$(num 1)" 1 && pass "mark spam" || fail "mark spam folder=$(conv_field "$(num 1)" folder)"
 call undo "$BATCH" >/dev/null
 folder_is "$(num 1)" 0 && pass "undo restores Inbox" || fail "after undo folder=$(conv_field "$(num 1)" folder)"

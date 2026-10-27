@@ -27,7 +27,7 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * Re-scores recent unlabeled messages after the model or the user's labels change.
- * User-driven verdicts (same sender, near-duplicates, trust) move messages; model-only flips never move an inbox
+ * User-driven verdicts (near-duplicates of a marked message) move messages; model-only flips never move an inbox
  * message to Spam retroactively (it only gets a "Possible spam" badge), but do rescue Spam-folder false positives.
  */
 class RescoreService(
@@ -88,7 +88,7 @@ class RescoreService(
                 moved++
                 if (batchId != null) {
                     events += FeedbackEventEntity(
-                        batchId = batchId, kind = FeedbackKind.AUTO_MOVE, messageId = m.id, senderKey = m.senderKey,
+                        batchId = batchId, kind = FeedbackKind.AUTO_MOVE, messageId = m.id,
                         label = newEffective, prevUserLabel = null, prevEffectiveLabel = oldEffective, prevEffectiveSource = previous?.effectiveSource ?: Source.PENDING,
                         engineLabelAtMark = previous?.modelLabel, createdAt = now,
                     )
@@ -147,15 +147,6 @@ class FeedbackService(
 ) {
     data class Result(val batchId: Long, val label: UserLabel, val marked: Int, val moved: Int)
 
-    /**
-     * Marks a conversation, which means its latest incoming message (the one shown in the list). Labels are always
-     * per message: the same sender can also send messages that aren't spam, e.g. a bank's promo and its passcodes.
-     */
-    suspend fun markThreads(threadIds: Collection<Long>, label: UserLabel): Result {
-        val ids = threadIds.flatMap { t -> db.messages().latestIncoming(t, 1).map { it.id } }.distinct()
-        return markMessages(ids, label)
-    }
-
     suspend fun markMessages(ids: Collection<Long>, label: UserLabel): Result {
         val now = System.currentTimeMillis()
         val batchId = now
@@ -168,7 +159,7 @@ class FeedbackService(
             for (m in messages) {
                 val previous = db.classifications().get(m.id)
                 events += FeedbackEventEntity(
-                    batchId = batchId, kind = FeedbackKind.EXPLICIT, messageId = m.id, senderKey = m.senderKey,
+                    batchId = batchId, kind = FeedbackKind.EXPLICIT, messageId = m.id,
                     label = userCode, prevUserLabel = previous?.userLabel, prevEffectiveLabel = previous?.effectiveLabel ?: LabelCode.HAM,
                     prevEffectiveSource = previous?.effectiveSource ?: Source.PENDING,
                     engineLabelAtMark = previous?.modelLabel, createdAt = now,

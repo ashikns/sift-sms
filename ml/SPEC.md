@@ -90,7 +90,7 @@ Split `clean` on U+0020 into tokens. For each token:
 
 Contract test: identical to `BertTokenizerFast` of all-MiniLM-L6-v2 applied to `enc`, on the full corpus.
 
-## feat_v1 — sparse hashed n-grams over `ng`, plus 26 metadata values
+## feat_v1 — sparse hashed n-grams over `ng`, plus 27 metadata values
 
 **Feature strings** (three families):
 - CHAR: let `s = " " + ng + " "`; every substring of length 3, 4 and 5 (by cp) → `"c:" + gram`.
@@ -139,7 +139,8 @@ float32 value). `idf` comes from the bundle (`idf[i] = ln((1 + N) / (1 + df_i)) 
 | 26 | `snd_first_contact` | first message from this sender |
 
 Features 21–26 are always 0 offline (public datasets have no sender info). Their base weights come from
-`s07b_sender_prior.py` (domain priors validated on the modern dev split), and on-device personalization adjusts them. Booleans are 1.0 / 0.0.
+`s07b_sender_prior.py` (domain priors validated on the modern dev split); on-device personalization never changes
+them. Booleans are 1.0 / 0.0.
 
 **phone_number.** Scan `clean` for maximal runs of cps in `0123456789+-.() ` (the set includes space) that start
 with a digit, `+` or `(`. A run counts if it holds 10–15 digits. Trailing spaces in a run are ignored.
@@ -171,4 +172,6 @@ u32 CRC32 (IEEE 802.3)       over every preceding byte
 
 Base head blocks: `bias`(f64×1), `w_embed`(f32×384), `mu_embed`(f32×384), `w_meta`(f32×27), `mu_meta`(f32×27),
 `w_hash`(f32×262144), `idf`(f32×262144), `fb_bias`(f64×1), `fb_scale`(f64×1), `w_meta_fb`(f32×27).
-The personalized file uses the same layout plus `meta`(u8×n, UTF-8 JSON) and is written via temp file + atomic rename.
+The personalized file uses the same container with blocks `meta`(u8×n, UTF-8 JSON), `w_embed`(f32×384),
+`w_meta`(f32×27), `hash_idx`(i32×k) and `hash_val`(f32×k) (the k hashed weights that differ from the base head), and
+is written via temp file + atomic rename.

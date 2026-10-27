@@ -8,12 +8,8 @@ import androidx.work.WorkManager
 import dev.ashik.sift.data.db.ConversationRow
 import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.di.AppGraph
-import dev.ashik.sift.spam.FeedbackService
 import dev.ashik.sift.spam.work.BackfillClassifyWorker
 import dev.ashik.sift.spam.work.WorkScheduler
-import dev.ashik.sift.spamcore.UserLabel
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -37,15 +33,6 @@ class ConversationsViewModel(private val graph: AppGraph, context: Context) : Vi
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    private val _feedback = MutableSharedFlow<FeedbackService.Result>(extraBufferCapacity = 4)
-    val feedback: SharedFlow<FeedbackService.Result> = _feedback
-
-    fun mark(threadIds: Set<Long>, label: UserLabel) = viewModelScope.launch {
-        _feedback.emit(graph.feedback.markThreads(threadIds, label))
-    }
-
-    fun undo(batchId: Long) = viewModelScope.launch { graph.feedback.undo(batchId) }
 
     fun markRead(threadIds: Set<Long>) = viewModelScope.launch {
         threadIds.forEach {

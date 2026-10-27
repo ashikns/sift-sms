@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,10 +34,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -55,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -68,8 +62,6 @@ import dev.ashik.sift.R
 import dev.ashik.sift.data.db.ConversationRow
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MsgType
-import dev.ashik.sift.spam.FeedbackService
-import dev.ashik.sift.spamcore.UserLabel
 import dev.ashik.sift.ui.components.Avatar
 import dev.ashik.sift.ui.components.displayAddress
 import dev.ashik.sift.ui.components.rememberGraph
@@ -83,30 +75,11 @@ fun ConversationsScreen(onOpenThread: (Long) -> Unit, onOpenSettings: () -> Unit
     val inbox by vm.inbox.collectAsStateWithLifecycle()
     val spam by vm.spam.collectAsStateWithLifecycle()
     val scan by vm.scan.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
-    val resources = LocalResources.current
-    LaunchedEffect(vm) {
-        vm.feedback.collect { result ->
-            if (result.marked == 0) return@collect
-            val message = feedbackMessage(resources, result)
-            val action = snackbar.showSnackbar(message, actionLabel = resources.getString(R.string.action_undo), duration = SnackbarDuration.Long)
-            if (action == SnackbarResult.ActionPerformed) vm.undo(result.batchId)
-        }
-    }
     ConversationsContent(
-        inbox = inbox, spam = spam, scan = scan, snackbar = snackbar,
+        inbox = inbox, spam = spam, scan = scan,
         onOpenThread = onOpenThread, onOpenSettings = onOpenSettings,
-        onMark = { ids, label -> vm.mark(ids, label) }, onMarkRead = { vm.markRead(it) }, onDelete = { vm.delete(it) },
+        onMarkRead = { vm.markRead(it) }, onDelete = { vm.delete(it) },
     )
-}
-
-fun feedbackMessage(resources: android.content.res.Resources, result: FeedbackService.Result): String {
-    val base = resources.getString(if (result.label == UserLabel.SPAM) R.string.snackbar_marked_spam else R.string.snackbar_marked_not_spam)
-    return if (result.moved > 0) {
-        base + " · " + resources.getQuantityString(R.plurals.snackbar_moved_similar, result.moved, result.moved)
-    } else {
-        base
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,10 +88,8 @@ fun ConversationsContent(
     inbox: List<ConversationRow>?,
     spam: List<ConversationRow>?,
     scan: ScanProgress?,
-    snackbar: SnackbarHostState,
     onOpenThread: (Long) -> Unit,
     onOpenSettings: () -> Unit,
-    onMark: (Set<Long>, UserLabel) -> Unit,
     onMarkRead: (Set<Long>) -> Unit,
     onDelete: (Set<Long>) -> Unit,
 ) {
@@ -156,14 +127,7 @@ fun ConversationsContent(
                     },
                     title = { Text(stringResource(R.string.selected_count, selection.size)) },
                     actions = {
-                        if (inSpam) {
-                            IconButton(onClick = { onMark(selection, UserLabel.HAM); selection = emptySet() }) {
-                                Icon(Icons.Default.Check, stringResource(R.string.action_not_spam))
-                            }
-                        } else {
-                            IconButton(onClick = { onMark(selection, UserLabel.SPAM); selection = emptySet() }) {
-                                Icon(Icons.Default.Warning, stringResource(R.string.action_mark_spam))
-                            }
+                        if (!inSpam) {
                             IconButton(onClick = { onMarkRead(selection); selection = emptySet() }) {
                                 Icon(Icons.Default.Done, stringResource(R.string.action_mark_read))
                             }
@@ -173,7 +137,6 @@ fun ConversationsContent(
                 )
             }
         },
-        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             PrimaryTabRow(selectedTabIndex = tab) {

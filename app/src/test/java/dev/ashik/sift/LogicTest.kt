@@ -25,9 +25,6 @@ class FolderAndRescoreTest {
         assertEquals(LabelCode.SPAM, FolderPolicy.effectiveLabel(UserLabel.SPAM.ordinal, LabelCode.HAM))
         assertEquals(LabelCode.SUSPICIOUS, FolderPolicy.effectiveLabel(null, LabelCode.SUSPICIOUS))
         assertEquals(LabelCode.HAM, FolderPolicy.effectiveLabel(null, null))
-        assertEquals(1, FolderPolicy.folderOf(LabelCode.SPAM))
-        assertEquals(0, FolderPolicy.folderOf(LabelCode.SUSPICIOUS))
-        assertEquals(0, FolderPolicy.folderOf(null))
     }
 
     @Test

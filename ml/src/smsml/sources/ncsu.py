@@ -236,17 +236,3 @@ def load(raw_dir: Path, *, min_chars: int = 8, min_ascii_ratio: float = 0.9, min
             "sender_type": sender_type(sender),
         })
     return finalize(pd.DataFrame(rows))
-
-
-def mapping_report(df: pd.DataFrame, raw_dir: Path) -> dict:
-    """How well reconstructed campaign ids reproduce the published per-campaign message counts."""
-    campaigns = load_campaigns(raw_dir)
-    got = Counter(int(c.split(":", 1)[1]) for c in df["campaign_id"].dropna())
-    exact = sum(1 for cid, c in campaigns.items() if got.get(cid, 0) == c.n_messages)
-    return {
-        "messages": int(len(df)),
-        "messages_with_campaign": int(df["campaign_id"].notna().sum()),
-        "campaigns": len(campaigns),
-        "campaigns_matched": len(got),
-        "campaigns_exact_count": exact,
-    }

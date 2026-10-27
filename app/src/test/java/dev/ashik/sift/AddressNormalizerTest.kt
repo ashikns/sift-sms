@@ -28,7 +28,6 @@ class AddressNormalizerTest {
         assertEquals("+16505550001", a.key)
         assertEquals(a.key, b.key)
         assertEquals(SenderKind.PHONE, a.kind)
-        assertTrue(a.nanp)
         assertFalse(a.international)
     }
 
@@ -40,7 +39,7 @@ class AddressNormalizerTest {
     }
 
     @Test
-    fun `alphanumeric and email senders cannot be replied to`() {
+    fun `alphanumeric and email senders keep a normalized key`() {
         val alpha = classify("  Amazon  Alerts ")
         assertEquals(SenderKind.ALPHANUMERIC, alpha.kind)
         assertEquals("AMAZON ALERTS", alpha.key)
@@ -54,7 +53,6 @@ class AddressNormalizerTest {
         val uk = classify("+447700900123")
         assertEquals(SenderKind.PHONE, uk.kind)
         assertTrue(uk.international)
-        assertFalse(uk.nanp)
         assertFalse(classify("+447700900123", iso = "GB").international)
     }
 

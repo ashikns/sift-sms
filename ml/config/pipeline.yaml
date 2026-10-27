@@ -12,8 +12,7 @@ dedupe:
   jaccard: 0.7
 split:
   train: 0.70
-  val: 0.15
-  test: 0.15
+  val: 0.15                  # the rest is test
   future_frac: 0.15          # newest timestamped smishing clusters -> "future" holdout
   max_per_cluster_train: 3
   max_spam_ratio: 3.0        # downsample spam clusters in train to at most 3 spam : 1 ham
@@ -40,11 +39,11 @@ calibrate:
     aggressive: 0.02
     warn: 0.05
 knn:
-  tau_spam: 0.80
   tau_ham: 0.90
 personalization:
-  # 1.0e6 freezes a block: only the sparse n-gram weights learn from marks. hash 4.0 = "light retraining", the
-  # user's chosen trade-off (s08 --confirm: resent scams 65% caught, similar legit kept 75%, ~1.6 pt drift risk).
-  priors: {embed: 1.0e6, meta: 1.0e6, hash: 4.0}
+  # "Light retraining", the user's chosen trade-off: the embedding and metadata blocks stay frozen and only the
+  # sparse n-gram weights learn from marks, with hash prior 4.0 (s08 --confirm: resent scams 65% caught, similar
+  # legit kept 75%, ~1.6 pt drift risk).
+  priors: {hash: 4.0}
   weights: {spam: 1.0, ham: 1.0, cluster_cap: 2.0, cluster_cos: 0.8, max_examples: 5000}
   debounce_ms: 3000

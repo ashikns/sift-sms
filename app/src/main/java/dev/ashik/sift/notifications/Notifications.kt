@@ -39,9 +39,6 @@ object Channels {
     const val SPAM = "spam"
     const val MMS = "mms_unsupported"
     const val SCAN = "scan"
-
-    /** Channels of earlier versions, deleted so they leave the app's notification settings. */
-    val REMOVED = listOf("send_failures")
 }
 
 /** Long-lived conversation shortcuts so message notifications appear in the system's Conversations section. */
@@ -90,7 +87,6 @@ class MessageNotifier(
                     .apply { description = context.getString(R.string.channel_scan_desc) },
             ),
         )
-        Channels.REMOVED.forEach(nm::deleteNotificationChannel)
     }
 
     /** Posts (or updates) the thread's notification with its unread, non-spam messages. */
@@ -124,7 +120,6 @@ class MessageNotifier(
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
         builder.addAction(action(threadId, NotificationActionReceiver.ACTION_MARK_READ, R.string.action_mark_read))
-        builder.addAction(action(threadId, NotificationActionReceiver.ACTION_MARK_SPAM, R.string.action_mark_spam))
         post(TAG_THREAD, threadId, builder)
     }
 
@@ -140,7 +135,6 @@ class MessageNotifier(
             .setAutoCancel(true)
             .setSilent(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .addAction(action(threadId, NotificationActionReceiver.ACTION_NOT_SPAM, R.string.action_not_spam))
         post(TAG_SPAM, threadId, builder)
     }
 

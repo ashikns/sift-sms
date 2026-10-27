@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -32,8 +31,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,13 +75,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.ashik.sift.R
-import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MsgStatus
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.ThreadMessageRow
 import dev.ashik.sift.data.db.UserLabelCode
 import dev.ashik.sift.spam.CueCodec
+import dev.ashik.sift.spam.FeedbackService
 import dev.ashik.sift.spamcore.Reason
 import dev.ashik.sift.spamcore.SenderKind
 import dev.ashik.sift.spamcore.UserLabel
@@ -93,7 +90,6 @@ import dev.ashik.sift.ui.components.displayAddress
 import dev.ashik.sift.ui.components.rememberGraph
 import dev.ashik.sift.ui.components.sameDay
 import dev.ashik.sift.ui.components.timeOfDay
-import dev.ashik.sift.ui.conversations.feedbackMessage
 import dev.ashik.sift.ui.navigation.ThreadKey
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -144,7 +140,6 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     val conv = conversation?.conversation
     val address = conv?.address ?: key.address.orEmpty()
     val title = conversation?.displayName ?: displayAddress(address)
-    val inSpam = conv?.folder == Folder.SPAM
     val senderKind = remember(address) { graph.normalizer.normalize(address).kind }
 
     Scaffold(
@@ -165,17 +160,6 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.action_more)) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            if (conv != null && conv.latestIncomingId != null) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(stringResource(if (inSpam) R.string.action_mark_conversation_not_spam else R.string.action_mark_conversation_spam))
-                                    },
-                                    onClick = {
-                                        menu = false
-                                        vm.markConversation(if (inSpam) UserLabel.HAM else UserLabel.SPAM)
-                                    },
-                                )
-                            }
                             if (senderKind == SenderKind.PHONE) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.action_call)) },
@@ -195,9 +179,6 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
                     }
                 },
             )
-        },
-        bottomBar = {
-            if (inSpam) SpamBanner(onNotSpam = { vm.markConversation(UserLabel.HAM) })
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -260,20 +241,12 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     }
 }
 
-@Composable
-private fun SpamBanner(onNotSpam: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
-    ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
-            Text(
-                stringResource(R.string.spam_banner), color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-            )
-            Button(onClick = onNotSpam, modifier = Modifier.testTag("banner_not_spam")) { Text(stringResource(R.string.action_not_spam)) }
-        }
+private fun feedbackMessage(resources: android.content.res.Resources, result: FeedbackService.Result): String {
+    val base = resources.getString(if (result.label == UserLabel.SPAM) R.string.snackbar_marked_spam else R.string.snackbar_marked_not_spam)
+    return if (result.moved > 0) {
+        base + " · " + resources.getQuantityString(R.plurals.snackbar_moved_similar, result.moved, result.moved)
+    } else {
+        base
     }
 }
 
@@ -342,7 +315,7 @@ fun MessageBubble(
                 if (incoming) {
                     val isSpam = m.effectiveLabel == LabelCode.SPAM
                     DropdownMenuItem(
-                        text = { Text(stringResource(if (isSpam) R.string.action_not_spam else R.string.action_mark_conversation_spam)) },
+                        text = { Text(stringResource(if (isSpam) R.string.action_not_spam else R.string.action_mark_spam)) },
                         onClick = { menu = false; onMark(if (isSpam) UserLabel.HAM else UserLabel.SPAM) },
                         modifier = Modifier.testTag("menu_mark"),
                     )
@@ -438,7 +411,7 @@ fun WhySheet(m: ThreadMessageRow, onDismiss: () -> Unit, onMark: (UserLabel) -> 
                 if (m.effectiveLabel == LabelCode.SPAM) {
                     Button(onClick = { onMark(UserLabel.HAM) }) { Text(stringResource(R.string.action_not_spam)) }
                 } else {
-                    OutlinedButton(onClick = { onMark(UserLabel.SPAM) }) { Text(stringResource(R.string.action_mark_conversation_spam)) }
+                    OutlinedButton(onClick = { onMark(UserLabel.SPAM) }) { Text(stringResource(R.string.action_mark_spam)) }
                     if (m.effectiveLabel == LabelCode.SUSPICIOUS) {
                         Button(onClick = { onMark(UserLabel.HAM) }) { Text(stringResource(R.string.action_not_spam)) }
                     }

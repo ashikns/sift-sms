@@ -34,7 +34,6 @@ class EngineTest {
         override suspend fun loadAll() = rows.values.toList()
         override suspend fun upsert(examples: List<TrainingExample>) { examples.forEach { rows[it.messageId] = it } }
         override suspend fun delete(messageIds: Collection<Long>) { messageIds.forEach { rows.remove(it) } }
-        override suspend fun clear() = rows.clear()
     }
 
     /** Deterministic stand-in for the transformer: a normalized bag of token ids ([shift] makes a "different model"). */
@@ -78,7 +77,8 @@ class EngineTest {
         File(dir, "model.json").writeText(
             """
             {"schema":1,"bundle_version":"$version",
-             "encoder":{"file":"encoder.int8.ort","sha256":"${ModelBundle.sha256(encoderBytes)}","ort_version":"1.27.0"},
+             "encoder":{"file":"encoder.int8.ort","sha256":"${ModelBundle.sha256(encoderBytes)}",
+                        "inputs":["input_ids","attention_mask"],"output":"embedding"},
              "tokenizer":{"file":"vocab.txt","sha256":"${ModelBundle.sha256(vocab)}"},
              "normalizer":{"version":"norm_v1","resources":{$resources}},
              "features":{"version":"feat_v1","hash_bits":18,"hash_seed":${Features.SEED},"meta_names":[$metaNames]},
@@ -100,7 +100,7 @@ class EngineTest {
 
     private fun sender(key: String = "+15550100") = SenderInfo(key, SenderKind.PHONE)
 
-    private fun input(id: Long, body: String, s: SenderInfo = sender()) = SmsInput(id, body, s, 0)
+    private fun input(body: String, s: SenderInfo = sender()) = SmsInput(body, s)
 
     private fun example(id: Long, body: String, label: UserLabel, createdAt: Long = id) =
         TrainingExample(id, body, SenderKind.PHONE, false, false, label, createdAt = createdAt, embedding = null, senderKey = "+15550100")
@@ -108,11 +108,11 @@ class EngineTest {
     @Test
     fun `classifies with rules model and fails open`() = runBlocking {
         val e = engine()
-        val spam = e.classify(input(1, "WINNER! Claim your prize gift card now"), DecisionPolicy()).verdict
+        val spam = e.classify(input("WINNER! Claim your prize gift card now"), DecisionPolicy()).verdict
         assertEquals(SpamLabel.SPAM, spam.label)
         assertEquals(Reason.MODEL, spam.reason)
         assertTrue(spam.cues.isNotEmpty())
-        assertEquals(SpamLabel.HAM, e.classify(input(2, "Are we still on for dinner?"), DecisionPolicy()).verdict.label)
+        assertEquals(SpamLabel.HAM, e.classify(input("Are we still on for dinner?"), DecisionPolicy()).verdict.label)
     }
 
     @Test
@@ -122,9 +122,9 @@ class EngineTest {
         val e = engine()
         e.learn(listOf(example(40, "BANK: Unpaid toll offer! Claim your prize gift card today", UserLabel.SPAM)))
         e.awaitIdle()
-        val promo = e.classify(input(41, "BANK: Unpaid toll offer! Claim your prize gift card now", bank), DecisionPolicy()).verdict
+        val promo = e.classify(input("BANK: Unpaid toll offer! Claim your prize gift card now", bank), DecisionPolicy()).verdict
         assertEquals(SpamLabel.SPAM, promo.label)
-        val otp = e.classify(input(42, "BANK: Your sign-in code is 482913. Don't share it.", bank), DecisionPolicy()).verdict
+        val otp = e.classify(input("BANK: Your sign-in code is 482913. Don't share it.", bank), DecisionPolicy()).verdict
         assertEquals(SpamLabel.HAM, otp.label)
         assertEquals(Reason.MODEL, otp.reason)
     }
@@ -135,12 +135,12 @@ class EngineTest {
         val e = engine(store)
         val novel = "Your parcel is held at the depot, schedule redelivery at parcel-help.top/r?id=88"
         val related = "Parcel held at depot: schedule redelivery today"
-        val before = e.classify(input(10, novel), DecisionPolicy()).verdict
+        val before = e.classify(input(novel), DecisionPolicy()).verdict
         assertNotEquals(SpamLabel.SPAM, before.label)
-        val p0 = e.classify(input(12, related), DecisionPolicy()).verdict.probability
+        val p0 = e.classify(input(related), DecisionPolicy()).verdict.probability
 
         e.learn(listOf(example(10, novel, UserLabel.SPAM)))
-        val variant = e.classify(input(11, "Your parcel is held at the depot, schedule redelivery at parcel-help.top/r?id=91"), DecisionPolicy()).verdict
+        val variant = e.classify(input("Your parcel is held at the depot, schedule redelivery at parcel-help.top/r?id=91"), DecisionPolicy()).verdict
         assertEquals(SpamLabel.SPAM to Reason.SIMILAR_TO_SPAM, variant.label to variant.reason)
         assertEquals(10L, variant.similarMessageId)
 
@@ -148,17 +148,17 @@ class EngineTest {
         assertEquals(1, e.info.value.modelVersion)
         assertEquals(1, e.info.value.examples)
         // A related but not near-duplicate message now scores higher than it did with the base model.
-        val p1 = e.classify(input(12, related), DecisionPolicy()).verdict.probability
+        val p1 = e.classify(input(related), DecisionPolicy()).verdict.probability
         assertTrue(p1 > p0, "p before=$p0 after=$p1")
 
         e.forget(listOf(10L))
         e.awaitIdle()
-        assertNotEquals(Reason.SIMILAR_TO_SPAM, e.classify(input(13, novel), DecisionPolicy()).verdict.reason)
+        assertNotEquals(Reason.SIMILAR_TO_SPAM, e.classify(input(novel), DecisionPolicy()).verdict.reason)
         assertEquals(0, store.rows.size)
     }
 
     @Test
-    fun `learned state survives a restart and reset returns to the base model`() = runBlocking {
+    fun `learned state survives a restart`() = runBlocking {
         val store = MemoryStore()
         val bundle = writeBundle(File(tmp, "bundle"))
         val first = engine(store, bundle)
@@ -172,13 +172,8 @@ class EngineTest {
         second.warmUp()
         second.awaitIdle()
         assertEquals(1, second.info.value.modelVersion)
-        val v = second.classify(input(21, "Final notice: unpaid toll balance, pay at toll-pay.top"), DecisionPolicy()).verdict
+        val v = second.classify(input("Final notice: unpaid toll balance, pay at toll-pay.top"), DecisionPolicy()).verdict
         assertEquals(Reason.SIMILAR_TO_SPAM, v.reason)
-
-        second.reset()
-        assertEquals(0, second.info.value.modelVersion)
-        assertTrue(store.rows.isEmpty())
-        assertTrue(!File(tmp, "state/personal_head.spmh").exists())
     }
 
     @Test
@@ -220,11 +215,11 @@ class EngineTest {
     @Test
     fun `broken bundle and broken encoder fail open`() = runBlocking {
         val broken = File(tmp, "broken").apply { mkdirs(); File(this, "model.json").writeText("{") }
-        val v = engine(bundleDir = broken).classify(input(30, "WINNER claim your prize"), DecisionPolicy()).verdict
+        val v = engine(bundleDir = broken).classify(input("WINNER claim your prize"), DecisionPolicy()).verdict
         assertEquals(SpamLabel.HAM to Reason.UNAVAILABLE, v.label to v.reason)
 
         val noEncoder = engine(encoder = { error("no ORT") })
-        val f = noEncoder.classify(input(31, "WINNER claim your prize gift card"), DecisionPolicy())
+        val f = noEncoder.classify(input("WINNER claim your prize gift card"), DecisionPolicy())
         assertEquals(Reason.MODEL_FALLBACK, f.verdict.reason)
         assertEquals(null, f.embedding)
     }

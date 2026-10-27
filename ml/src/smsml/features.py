@@ -1,9 +1,8 @@
-"""feat_v1 — hashed n-gram features and the 26 metadata values (SPEC.md). Mirrored by spamcore's features package."""
+"""feat_v1 — hashed n-gram features and the 27 metadata values (SPEC.md). Mirrored by spamcore's features package."""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 
 import numpy as np
 
@@ -26,19 +25,6 @@ PHONE_START = frozenset("0123456789+(")
 OPTOUT_VERBS = ("reply", "text", "txt", "send", "opt")
 OTP_WORDS = ("code", "otp", "passcode", "verification", "pin", "0fa")  # "2FA" reads "0fa" after digit folding
 LN_1001 = math.log(1001.0)
-
-
-@dataclass(frozen=True)
-class Sender:
-    """Sender facts for features 21-26. All False offline (public datasets have no sender info)."""
-
-    kind: str = "UNKNOWN"  # PHONE | SHORT_CODE | ALPHANUMERIC | EMAIL | UNKNOWN
-    nanp: bool = False
-    international: bool = False
-    first_contact: bool = False
-
-
-OFFLINE_SENDER = Sender()
 
 
 def word_tokens(ng: str) -> list[str]:
@@ -158,7 +144,8 @@ def currency_amount(ng: str, toks: list[str]) -> bool:
     return False
 
 
-def metadata(n: Normalized, sender: Sender = OFFLINE_SENDER) -> np.ndarray:
+def metadata(n: Normalized) -> np.ndarray:
+    """The metadata values; the sender features (21-26) stay 0 (public datasets have no sender info)."""
     toks = word_tokens(n.ng)
     words = set(toks)
     m = [0.0] * N_META
@@ -189,12 +176,6 @@ def metadata(n: Normalized, sender: Sender = OFFLINE_SENDER) -> np.ndarray:
     m[18] = min(n.dropped_count / max(1, n.cp_count), 1.0)
     m[19] = float(n.non_gsm7)
     m[20] = float(any(u.official for u in n.urls))
-    m[21] = float(sender.kind == "SHORT_CODE")
-    m[22] = float(sender.kind == "PHONE" and sender.nanp)
-    m[23] = float(sender.kind == "ALPHANUMERIC")
-    m[24] = float(sender.kind == "EMAIL")
-    m[25] = float(sender.international)
-    m[26] = float(sender.first_contact)
     return np.asarray(m, dtype=np.float64).astype(np.float32)
 
 
@@ -219,6 +200,6 @@ def sparse_cosine(ai: np.ndarray, av: np.ndarray, bi: np.ndarray, bv: np.ndarray
 
 
 __all__ = [
-    "META_NAMES", "N_META", "SENDER_SLICE", "Sender", "OFFLINE_SENDER", "BUCKETS", "word_tokens",
+    "META_NAMES", "N_META", "SENDER_SLICE", "BUCKETS", "word_tokens",
     "feature_strings", "sparse_features", "bucket_set", "idf_from_df", "metadata", "sparse_cosine",
 ]

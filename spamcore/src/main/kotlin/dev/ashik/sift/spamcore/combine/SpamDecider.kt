@@ -16,7 +16,7 @@ data class Thresholds(val conservative: Double, val balanced: Double, val aggres
 
 /**
  * The decision order for one message (mirrors ml/src/smsml/decide.py decide): a near-duplicate of a message the
- * user labeled, else the model. There are no sender-level rules.
+ * user labeled, else the model.
  */
 object SpamDecider {
     fun memoryRule(match: LabeledMemory.Match?): Pair<SpamLabel, Reason>? = when (match?.label) {

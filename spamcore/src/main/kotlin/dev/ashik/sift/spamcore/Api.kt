@@ -15,7 +15,7 @@ enum class Sensitivity { CONSERVATIVE, BALANCED, AGGRESSIVE }
 
 /**
  * Why a verdict was reached; drives the "Why?" explanation in the UI. Every verdict is about one message's own
- * content: there are no per-sender verdicts (one sender can send both a promo and a one-time passcode).
+ * content, since one sender can send both a promo and a one-time passcode.
  */
 enum class Reason {
     SIMILAR_TO_SPAM,
@@ -47,10 +47,8 @@ data class DecisionPolicy(
 )
 
 data class SmsInput(
-    val messageId: Long,
     val body: String,
     val sender: SenderInfo,
-    val receivedAt: Long,
 )
 
 /** One human-readable cue behind a verdict, e.g. "Shortened link", with its contribution in logits. */
@@ -105,7 +103,6 @@ interface ExampleStore {
     suspend fun loadAll(): List<TrainingExample>
     suspend fun upsert(examples: List<TrainingExample>)
     suspend fun delete(messageIds: Collection<Long>)
-    suspend fun clear()
 }
 
 interface SpamEngine {
@@ -124,9 +121,6 @@ interface SpamEngine {
     suspend fun learn(examples: List<TrainingExample>)
 
     suspend fun forget(messageIds: Collection<Long>)
-
-    /** Drops all learned state and returns to the base model. */
-    suspend fun reset()
 
     /** Suspends until any pending retrain has finished. */
     suspend fun awaitIdle()

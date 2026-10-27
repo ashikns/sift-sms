@@ -90,7 +90,6 @@ class Example:
     idx: np.ndarray
     val: np.ndarray
     label: int
-    weight: float
     key: int = 0
 
 
@@ -102,9 +101,6 @@ class Priors:
     embed: float = 1.0
     meta: float = 4.0
     hash: float = 0.5
-
-    def scaled(self, k: float) -> "Priors":
-        return Priors(self.embed * k, self.meta * k, self.hash * k)
 
 
 @dataclass(frozen=True)

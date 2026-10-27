@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test of the minified release build on the emulator. e2e.sh drives the debug build, which R8 never touches, so it can't see
-# release-only breakage: R8 once deleted the field that keeps the memory-mapped encoder alive, and ONNX Runtime then read freed memory
-# (SIGSEGV) after the next GC. This launches the release app, runs Settings → Rescan messages (a foreground service with notifications),
+# release-only breakage, such as R8 deleting the field that keeps the memory-mapped encoder alive (ONNX Runtime then reads freed memory
+# and crashes with SIGSEGV after the next GC). This launches the release app, runs Settings → Rescan messages (a foreground service with notifications),
 # moves the app to the background (ART compacts its heap) and delivers a burst of SMS that all need the encoder. Fails on any crash.
 # Emulator only.
 #

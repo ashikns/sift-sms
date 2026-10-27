@@ -13,8 +13,7 @@ class ReconcilePlannerTest {
     private val hour = 3_600_000L
 
     private fun p(id: Long, address: String = "+16505550001", date: Long = now - 10 * hour, read: Boolean = true, type: Int = 1) =
-        ProviderSms(id, threadId = 7, address = address, body = null, date = date, dateSent = 0, type = type, read = read,
-            seen = read, status = -1, errorCode = 0, subId = 1)
+        ProviderSms(id, threadId = 7, address = address, body = null, date = date, type = type, read = read, status = -1)
 
     private fun r(row: ProviderSms, missingSince: Long? = null) =
         MessageKey(row.id, MessageMapping.fingerprint(row.address, row.date), MessageMapping.mutableHash(row), row.date, row.threadId, missingSince)

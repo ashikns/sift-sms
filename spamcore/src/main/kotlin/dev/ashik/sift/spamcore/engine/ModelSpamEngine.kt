@@ -7,7 +7,6 @@ import dev.ashik.sift.spamcore.Reason
 import dev.ashik.sift.spamcore.Scored
 import dev.ashik.sift.spamcore.SenderInfo
 import dev.ashik.sift.spamcore.SenderKind
-import dev.ashik.sift.spamcore.Sensitivity
 import dev.ashik.sift.spamcore.SmsInput
 import dev.ashik.sift.spamcore.SpamEngine
 import dev.ashik.sift.spamcore.SpamLabel
@@ -245,21 +244,6 @@ class ModelSpamEngine(
             messageIds.forEach { examples.remove(it) }
             updateMemory { it.without(messageIds) }
             scheduleRetrain(l)
-        }
-    }
-
-    override suspend fun reset() {
-        store.clear()
-        val l = ensureLoaded() ?: return
-        withContext(writer) {
-            retrainJob?.cancel()
-            retrainJob = null
-            examples.clear()
-            personalFile.delete()
-            embeddingsMarker.delete()
-            val knn = l.bundle.config.knn
-            state.set(PersonalState(l.bundle.baseHead, LabeledMemory(knn.tauSpam, knn.tauHam), 0, null))
-            publishInfo()
         }
     }
 

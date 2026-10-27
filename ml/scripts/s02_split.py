@@ -6,7 +6,8 @@ Writes data/work/corpus_split.parquet with a `split` column:
   train | val_a | val_b | test | future | capped
 - future: clusters containing any timestamped message at or after the newest `future_frac` quantile.
 - templates are split by template_id; everything else by cluster with StratifiedGroupKFold over (label, source).
-- val is halved by cluster: val_a fits the stacker, val_b calibrates thresholds.
+- val is halved by cluster: val_a fits the stacker (s06), val_b scores it on clusters it didn't see. Everywhere else
+  (s03 checkpoint selection, s04 export checks, s07 thresholds, the s08 simulation pool) both halves are used together.
 - train keeps at most max(`max_per_cluster_train`, √n) rows per cluster of n and at most `max_spam_ratio` spam per ham
   (excess rows become `capped`, used nowhere).
 """

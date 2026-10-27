@@ -51,11 +51,6 @@ class ThreadViewModel(private val graph: AppGraph, key: ThreadKey) : ViewModel()
         _feedback.emit(graph.feedback.markMessages(listOf(messageId), label))
     }
 
-    fun markConversation(label: UserLabel) {
-        val id = threadId.value ?: return
-        viewModelScope.launch { _feedback.emit(graph.feedback.markThreads(listOf(id), label)) }
-    }
-
     fun undo(batchId: Long) = viewModelScope.launch { graph.feedback.undo(batchId) }
 
     fun deleteMessage(messageId: Long) = viewModelScope.launch { runCatching { graph.repository.deleteMessages(listOf(messageId)) } }

@@ -37,8 +37,10 @@ class DatabaseTest {
     @After
     fun tearDown() = db.close()
 
+    private suspend fun conversation(threadId: Long) = db.conversations().observe(threadId).first()!!.conversation
+
     private fun msg(id: Long, thread: Long, type: Int, date: Long, read: Boolean = true, sender: String = "+16505550001", kind: String = "PHONE") =
-        MessageEntity(id, thread, sender, sender, kind, "m$id", date, date, type, -1, read, read, 1, 0, id, 0)
+        MessageEntity(id, thread, sender, sender, kind, "m$id", date, type, -1, read, id, 0)
 
     @Test
     fun projectorPlacesConversationsByLatestIncomingMessage() = runBlocking {
@@ -58,28 +60,27 @@ class DatabaseTest {
                 ClassificationEntity(5, ClassState.DONE, effectiveLabel = LabelCode.SUSPICIOUS, effectiveSource = Source.ENGINE),
             ),
         )
-        projector.rebuildAll()
+        projector.rebuild(listOf(10L, 20L, 30L))
 
-        val c10 = db.conversations().get(10)!!
+        val c10 = conversation(10)
         assertEquals(Folder.INBOX, c10.folder)
         assertEquals(2L, c10.latestMessageId)
-        assertEquals(1L, c10.latestIncomingId)
         assertEquals(MsgType.SENT, c10.latestType)
         assertEquals(1, c10.unreadCount)
         assertEquals(2, c10.messageCount)
 
-        val c20 = db.conversations().get(20)!!
+        val c20 = conversation(20)
         assertEquals(Folder.SPAM, c20.folder)
         assertEquals(LabelCode.SPAM, c20.latestLabel)
 
-        val c30 = db.conversations().get(30)!!
+        val c30 = conversation(30)
         assertEquals(Folder.INBOX, c30.folder)
         assertEquals(LabelCode.SUSPICIOUS, c30.latestLabel)
 
         // The user's "not spam" wins over the engine and moves the conversation back.
         db.classifications().setUserLabel(4, UserLabel.HAM.ordinal, 3000, LabelCode.HAM, Source.USER)
         projector.rebuild(listOf(20L))
-        assertEquals(Folder.INBOX, db.conversations().get(20)!!.folder)
+        assertEquals(Folder.INBOX, conversation(20).folder)
         assertEquals(listOf(10L, 20L, 30L), db.conversations().observeFolder(Folder.INBOX).first().map { it.conversation.threadId }.sorted())
     }
 
@@ -120,7 +121,7 @@ class DatabaseTest {
         assertEquals(3, db.messages().rescanCount())
         assertEquals(listOf(2L, 1L), db.messages().rescanRemainingIds(startedAt = 500))
         assertEquals(listOf(3L, 2L, 1L), db.messages().rescanRemainingIds(startedAt = 1000))
-        projector.rebuildAll()
+        projector.rebuild(listOf(10L))
         assertEquals(listOf(ThreadFolder(10, Folder.SPAM)), db.conversations().folders())
     }
 
@@ -132,7 +133,7 @@ class DatabaseTest {
                 TrainingExampleEntity(2, "Your code is 123456", "BANK", "ALPHANUMERIC", false, false, UserLabel.HAM.ordinal, 2000, ByteArray(1536)),
             ),
         )
-        db.contacts().upsertAll(listOf(ContactCacheEntity("+16505550001", "Alex", null, true, 0)))
+        db.contacts().upsertAll(listOf(ContactCacheEntity("+16505550001", "Alex", null)))
         db.messages().upsertAll(listOf(msg(1, 10, MsgType.INBOX, 1000, sender = "6505550001")))
         val rows = db.trainingExamples().observeEntries().first()
         assertEquals(listOf(2L, 1L), rows.map { it.messageId })
@@ -146,7 +147,6 @@ class DatabaseTest {
         db.messages().upsertAll(listOf(msg(1, 10, MsgType.INBOX, 1000), msg(2, 10, MsgType.INBOX, 2000), msg(3, 10, MsgType.SENT, 3000)))
         assertEquals(0, db.messages().earlierIncomingCount("+16505550001", 1, 1000))
         assertEquals(1, db.messages().earlierIncomingCount("+16505550001", 2, 2000))
-        assertEquals(1, db.messages().outgoingCount("+16505550001"))
         assertEquals(10L, db.messages().threadForSender("+16505550001"))
     }
 }

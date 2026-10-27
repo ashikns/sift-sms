@@ -9,7 +9,6 @@ import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.repo.ConversationProjector
 import dev.ashik.sift.data.repo.MessageMapping
 import dev.ashik.sift.data.repo.MessageRepository
-import dev.ashik.sift.spam.work.SyncWorker
 import dev.ashik.sift.spam.work.WorkScheduler
 import dev.ashik.sift.telephony.DefaultSmsRole
 import dev.ashik.sift.telephony.ProviderSms
@@ -97,7 +96,7 @@ class SyncEngine(
         val newest = withContext(Dispatchers.IO) { gateway.queryNewest(500) }
         repository.mirror(newest, notify = false)
         contacts.refreshAll()
-        scheduler.enqueueSync(SyncWorker.MODE_FULL, markInitialDone = true)
+        scheduler.enqueueSync(markInitialDone = true)
     }
 
     /** New rows after Room's max id, plus a diff of the last 7 days; escalates to a full reconcile on count drift. */
@@ -140,9 +139,7 @@ class SyncEngine(
             db.withWriteTransaction {
                 val threads = HashSet<Long>()
                 for ((p, r) in plan.updates) {
-                    db.messages().updateMutable(
-                        p.id, p.type, p.status, p.errorCode, p.read, p.seen, p.threadId, p.subId, MessageMapping.mutableHash(p),
-                    )
+                    db.messages().updateMutable(p.id, p.type, p.status, p.read, p.threadId, MessageMapping.mutableHash(p))
                     threads += p.threadId
                     threads += r.threadId
                 }

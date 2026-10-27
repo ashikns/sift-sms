@@ -18,7 +18,6 @@
         <item quantity="other">%d new messages</item>
     </plurals>
     <string name="action_mark_read">Mark as read</string>
-    <string name="action_mark_spam">Spam</string>
     <string name="action_not_spam">Not spam</string>
     <string name="notification_spam_title">Filtered as spam</string>
     <string name="notification_spam_text">A message from %1$s was moved to Spam</string>
@@ -55,7 +54,7 @@
     <string name="possible_spam">Possible spam</string>
     <string name="you_prefix">You: %1$s</string>
     <string name="snackbar_marked_spam">Marked as spam</string>
-    <string name="snackbar_marked_not_spam">Moved to Inbox</string>
+    <string name="snackbar_marked_not_spam">Marked as not spam</string>
     <plurals name="snackbar_moved_similar">
         <item quantity="one">%d similar message moved</item>
         <item quantity="other">%d similar messages moved</item>
@@ -70,15 +69,13 @@
     <string name="status_not_sent">Not sent</string>
     <string name="status_delivered">Delivered</string>
     <string name="status_delivery_failed">Not delivered</string>
-    <string name="spam_banner">This conversation is in Spam.</string>
     <string name="chip_spam">Spam</string>
     <string name="chip_possible_spam">Possible spam</string>
     <string name="action_copy">Copy text</string>
     <string name="action_details">Why?</string>
     <string name="action_call">Call</string>
     <string name="action_delete_conversation">Delete conversation</string>
-    <string name="action_mark_conversation_spam">Mark as spam</string>
-    <string name="action_mark_conversation_not_spam">Not spam</string>
+    <string name="action_mark_spam">Mark as spam</string>
     <string name="delete_message_title">Delete message?</string>
 
     <!-- Why sheet -->
@@ -98,8 +95,6 @@
     <string name="reason_UNAVAILABLE">The spam filter wasn\'t available, so Sift left it in your inbox.</string>
     <string name="reason_user_spam">You marked this message as spam.</string>
     <string name="reason_user_ham">You marked this message as not spam.</string>
-
-    <!-- New conversation -->
 
     <!-- Settings -->
     <string name="settings_filtering">Spam filtering</string>

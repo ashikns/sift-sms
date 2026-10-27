@@ -50,8 +50,8 @@ def load_all(raw_dir: Path = RAW_DIR, config: dict | None = None, *, include_non
     attempt("mishra", lambda: mishra.load(raw_dir, seed))
     attempt("ncsu", lambda: ncsu.load(
         raw_dir, min_chars=int(cfg["ncsu"]["min_chars"]),
-        min_ascii_ratio=float(cfg["imc25"]["min_ascii_letter_ratio"]),
-        min_stopword_hits=int(cfg["imc25"]["min_stopword_hits"])))
+        min_ascii_ratio=float(cfg["ncsu"]["min_ascii_letter_ratio"]),
+        min_stopword_hits=int(cfg["ncsu"]["min_stopword_hits"])))
     if "imc25" in sources:
         try:
             hosts = ncsu.smishing_hosts(raw_dir)

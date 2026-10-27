@@ -3,7 +3,9 @@
     uv run python -I scripts/s10_golden.py --prelim          # normalization/tokens/features only (idf = 1)
     uv run python -I scripts/s10_golden.py --bundle <dir>    # + real idf, embeddings and scores from a model bundle
 
-Outputs go to spamcore/src/test/resources/golden/: cases jsonl, the resource files and vocab used to make them.
+--prelim writes to spamcore/src/test/resources/golden/: cases jsonl, the trainer fixture, and the resource files and
+vocab used to make them. Bundle mode writes app/src/androidTest/assets/golden/bundle_v1.jsonl.gz (read by spamcore's
+GoldenBundleTest and the app's BundleParityTest).
 """
 
 from __future__ import annotations
@@ -89,7 +91,7 @@ def trainer_fixture(seed: int = 99) -> dict:
         if emb is not None:
             emb = (emb / np.linalg.norm(emb)).astype(np.float32)
         meta = rng.uniform(0, 1, N_META).astype(np.float32)
-        examples.append(Example(emb, meta, idx, val, label, 0.0, key=1000 + i))
+        examples.append(Example(emb, meta, idx, val, label, key=1000 + i))
     weighting = Weighting(cluster_cos=0.8)
     weights = example_weights(examples, weighting)
     priors = Priors()

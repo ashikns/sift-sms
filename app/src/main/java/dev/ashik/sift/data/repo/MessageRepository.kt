@@ -22,11 +22,7 @@ object MessageMapping {
         return mix64(h xor date)
     }
 
-    fun mutableHash(row: ProviderSms): Int =
-        listOf(row.type, row.read, row.seen, row.status, row.errorCode, row.threadId, row.subId).hashCode()
-
-    fun mutableHash(m: MessageEntity): Int =
-        listOf(m.type, m.read, m.seen, m.status, m.errorCode, m.threadId, m.subId).hashCode()
+    fun mutableHash(row: ProviderSms): Int = listOf(row.type, row.read, row.status, row.threadId).hashCode()
 
     private fun mix64(x0: Long): Long {
         var x = x0
@@ -43,11 +39,6 @@ class ConversationProjector(private val db: AppDatabase) {
             db.conversations().deleteThreads(chunk)
             db.conversations().insertProjection(chunk)
         }
-    }
-
-    suspend fun rebuildAll() {
-        db.conversations().deleteAll()
-        db.conversations().insertProjectionAll()
     }
 }
 
@@ -68,13 +59,9 @@ class MessageRepository(
             senderKind = sender.kind.name,
             body = body,
             date = row.date,
-            dateSent = row.dateSent,
             type = row.type,
             status = row.status,
             read = row.read,
-            seen = row.seen,
-            subId = row.subId,
-            errorCode = row.errorCode,
             fingerprint = MessageMapping.fingerprint(row.address, row.date),
             mutableHash = MessageMapping.mutableHash(row),
         )

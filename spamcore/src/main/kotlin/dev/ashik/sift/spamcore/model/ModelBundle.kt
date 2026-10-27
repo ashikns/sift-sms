@@ -12,7 +12,6 @@ import dev.ashik.sift.spamcore.train.Weighting
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
@@ -46,7 +45,6 @@ class DirectoryBundleSource(private val dir: File) : BundleSource {
 data class ModelConfig(
     val schema: Int,
     @SerialName("bundle_version") val bundleVersion: String,
-    @SerialName("created_utc") val createdUtc: String = "",
     val encoder: EncoderConfig,
     val tokenizer: FileRef,
     val normalizer: NormalizerConfig,
@@ -55,7 +53,6 @@ data class ModelConfig(
     val thresholds: ThresholdConfig,
     val personalization: PersonalizationConfig,
     val knn: KnnConfig,
-    val metrics: JsonObject? = null,
 )
 
 @Serializable
@@ -65,11 +62,8 @@ data class FileRef(val file: String, val sha256: String)
 data class EncoderConfig(
     val file: String,
     val sha256: String,
-    val dim: Int = 384,
-    @SerialName("max_len") val maxLen: Int = 128,
-    @SerialName("ort_version") val ortVersion: String = "",
-    val inputs: List<String> = listOf("input_ids", "attention_mask"),
-    val output: String = "embedding",
+    val inputs: List<String>,
+    val output: String,
 )
 
 @Serializable
@@ -95,7 +89,7 @@ data class ThresholdConfig(val full: ThresholdSet, val fallback: ThresholdSet)
 data class PersonalizationConfig(
     val priors: PriorsConfig,
     val weights: WeightsConfig,
-    @SerialName("debounce_ms") val debounceMs: Long = 3000,
+    @SerialName("debounce_ms") val debounceMs: Long,
 )
 
 @Serializable

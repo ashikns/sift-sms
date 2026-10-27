@@ -2,7 +2,6 @@ package dev.ashik.sift.spamcore
 
 import dev.ashik.sift.spamcore.encoder.OrtTextEncoder
 import dev.ashik.sift.spamcore.features.Features
-import dev.ashik.sift.spamcore.features.SparseVector
 import dev.ashik.sift.spamcore.head.LinearHead
 import dev.ashik.sift.spamcore.model.DirectoryBundleSource
 import dev.ashik.sift.spamcore.model.ModelBundle
@@ -69,6 +68,5 @@ class GoldenBundleTest {
         assertTrue(worstZ <= 1e-5, "head logit differs from python by $worstZ")
         assertTrue(worstEmb <= 1e-4, "embedding differs from python by $worstEmb")
         assertTrue(worstP <= 1e-4, "probability differs from python by $worstP")
-        assertTrue(SparseVector.EMPTY.size == 0)
     }
 }

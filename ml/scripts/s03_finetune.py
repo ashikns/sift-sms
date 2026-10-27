@@ -3,8 +3,8 @@
     uv run python -I scripts/s03_finetune.py [--frozen]
 
 Inputs are norm_v1 `enc` strings (the same text the device encodes). Saves the best checkpoint by validation
-PR-AUC to data/work/finetuned/ (HF model dir + head.pt + metrics.json). --frozen stops after the linear probe
-(baseline for the ablation in s09).
+PR-AUC to data/work/finetuned/ (HF model dir + metrics.json). --frozen stops after the linear probe, so the encoder
+keeps its pretrained weights.
 """
 
 from __future__ import annotations
@@ -182,7 +182,6 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     model.bert.save_pretrained(out)
     tok.save_pretrained(out)
-    torch.save(model.head.state_dict(), work("finetuned", "head.pt"))
     work("finetuned", "metrics.json").write_text(json.dumps(
         {"best": {"val_pr_auc": best["val_pr_auc"], "stage": best["stage"]}, "frozen": args.frozen, "history": history},
         indent=2), encoding="utf-8")

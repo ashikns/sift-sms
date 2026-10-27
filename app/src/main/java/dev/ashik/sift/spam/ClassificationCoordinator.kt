@@ -93,7 +93,7 @@ class ClassificationCoordinator(
         val started = SystemClock.elapsedRealtime()
         val scored = withContext(engineDispatcher) {
             mutex.withLock {
-                runCatching { engine.classify(SmsInput(m.id, m.body, sender, m.date), effectivePolicy, cached) }
+                runCatching { engine.classify(SmsInput(m.body, sender), effectivePolicy, cached) }
                     .onFailure { Log.e(TAG, "engine.classify failed for ${m.id}", it) }
                     .getOrNull()
             }
@@ -147,13 +147,6 @@ class ClassificationCoordinator(
             notified = c.previous?.notified ?: false,
             classifiedAt = System.currentTimeMillis(),
         )
-    }
-
-    /** Classifies and applies in one go; returns null for outgoing or missing messages. */
-    suspend fun classifyAndApply(messageId: Long): ClassificationEntity? {
-        val m = db.messages().get(messageId) ?: return null
-        val computed = compute(m) ?: return null
-        return apply(computed)
     }
 
     private fun failOpen() = Verdict(SpamLabel.HAM, Float.NaN, Reason.UNAVAILABLE)

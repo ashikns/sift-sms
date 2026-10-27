@@ -26,12 +26,12 @@ import kotlin.coroutines.cancellation.CancellationException
 class WorkScheduler(private val context: Context) {
     private val wm get() = WorkManager.getInstance(context)
 
-    fun enqueueSync(mode: String, markInitialDone: Boolean = false) {
+    fun enqueueSync(markInitialDone: Boolean = false) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setInputData(workDataOf(SyncWorker.KEY_MODE to mode, SyncWorker.KEY_INITIAL to markInitialDone))
+            .setInputData(workDataOf(SyncWorker.KEY_INITIAL to markInitialDone))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
-        wm.enqueueUniqueWork("sync-$mode", ExistingWorkPolicy.KEEP, request)
+        wm.enqueueUniqueWork("sync", ExistingWorkPolicy.KEEP, request)
     }
 
     fun enqueueBackfill(rescan: Boolean = false) {
@@ -57,10 +57,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         val graph = (applicationContext as SiftApp).graph
         if (!graph.role.isHeldNow()) return Result.success()
-        when (inputData.getString(KEY_MODE)) {
-            MODE_FULL -> graph.sync.fullReconcile()
-            else -> graph.sync.incremental()
-        }
+        graph.sync.fullReconcile()
         if (inputData.getBoolean(KEY_INITIAL, false)) {
             graph.settings.setInitialImportDone(true)
             graph.contacts.refreshAll()
@@ -70,10 +67,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 
     companion object {
-        const val KEY_MODE = "mode"
         const val KEY_INITIAL = "initial"
-        const val MODE_FULL = "full"
-        const val MODE_INCREMENTAL = "incremental"
     }
 }
 

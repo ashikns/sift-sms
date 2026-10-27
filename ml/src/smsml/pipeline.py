@@ -101,7 +101,7 @@ def _feat_one(text: str):
 
 
 def featurize(texts: list[str], idf: np.ndarray) -> tuple[sp.csr_matrix, np.ndarray]:
-    """Hashed sparse features (CSR, n × 2^18) and metadata (n × 26) for raw texts, offline sender facts."""
+    """Hashed sparse features (CSR, n × 2^18) and metadata (n × 27, sender features 0) for raw texts."""
     with ProcessPoolExecutor(WORKERS, initializer=_init_idf, initargs=(idf,)) as ex:
         rows = list(ex.map(_feat_one, texts, chunksize=256))
     indptr = np.zeros(len(rows) + 1, dtype=np.int64)

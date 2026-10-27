@@ -11,15 +11,11 @@ object MsgType {
     const val OUTBOX = 4
     const val FAILED = 5
     const val QUEUED = 6
-
-    fun isOutgoing(type: Int) = type != INBOX
 }
 
 /** Telephony.Sms.STATUS_* values. */
 object MsgStatus {
-    const val NONE = -1
     const val COMPLETE = 0
-    const val PENDING = 32
     const val FAILED = 64
 }
 
@@ -31,7 +27,6 @@ object LabelCode {
 
     fun of(label: SpamLabel) = label.ordinal
     fun of(label: UserLabel) = if (label == UserLabel.SPAM) SPAM else HAM
-    fun toSpamLabel(code: Int) = SpamLabel.entries.getOrElse(code) { SpamLabel.HAM }
 }
 
 /** Stored user-label codes: identical to [UserLabel] ordinals (HAM, SPAM). */
@@ -62,6 +57,6 @@ object FeedbackKind {
     /** The user marked this message. */
     const val EXPLICIT = 0
 
-    /** A similar message or same-sender message that moved because of an explicit mark (undone together). */
+    /** A similar message that moved because of an explicit mark (undone together). */
     const val AUTO_MOVE = 1
 }

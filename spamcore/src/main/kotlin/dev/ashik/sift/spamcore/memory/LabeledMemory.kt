@@ -4,7 +4,7 @@ import dev.ashik.sift.spamcore.features.SparseVector
 
 /**
  * Near-duplicate memory of messages the user labeled (explicit labels only), matched by n-gram cosine.
- * Immutable: updates return a new instance, so readers never lock. Mirrors ml/src/smsml/decide.py LabeledMemory.
+ * Immutable: updates return a new instance, so readers never lock. Mirrored by ml/scripts/s08_simulate.py Memory.
  */
 class LabeledMemory private constructor(
     private val entries: Map<Long, Entry>,

@@ -9,7 +9,7 @@ repeat senders) are replayed against simulated users:
   noisy      like diligent, but 5% of marks are wrong
 Each message is decided like the engine does, from its own content (near-duplicate memory → model → OTP
 guardrail). The user's marks are the only training signal: each one updates the memory immediately and the head is
-retrained (MAP). The probe set only measures drift (legit messages a retrain newly flags); it never blocks learning.
+retrained (MAP). The probe set measures drift (legit messages a retrain newly flags).
 Cost = 5·FP + 1·FN. Picks the grid point with the lowest diligent-user cost whose spam_only probe-FPR increase
 stays ≤ 0.3 points, and writes data/work/personalization.json.
 """
@@ -54,7 +54,6 @@ class Msg:
     idx: np.ndarray
     val: np.ndarray
     sender: str
-    acquaintance: bool
     cluster: str
     text: str = ""
 
@@ -79,16 +78,15 @@ def build_stream(seed: int, pool: list[Msg], n: int = 2400, spam_frac: float = 0
     for i in order:
         m = chosen[i]
         if m.y == 0:
-            sender, acq = friends[rng.choice(60, p=zipf)], True
+            sender = friends[rng.choice(60, p=zipf)]
         else:
             sender = f"camp-{m.cluster}" if rng.random() < 0.3 else f"spam-{rng.integers(1 << 40)}"
-            acq = False
-        out.append(Msg(m.y, m.emb, m.meta, m.idx, m.val, sender, acq, m.cluster, m.text))
+        out.append(Msg(m.y, m.emb, m.meta, m.idx, m.val, sender, m.cluster, m.text))
     return out
 
 
 class Memory:
-    """Vectorized near-duplicate memory with the same rules as decide.LabeledMemory."""
+    """Vectorized near-duplicate memory with the same rules as spamcore's LabeledMemory."""
 
     def __init__(self, tau_spam: float, tau_ham: float):
         self.tau_spam, self.tau_ham = tau_spam, tau_ham
@@ -171,7 +169,7 @@ def simulate(args) -> dict:
             mark = 1 - mark
         if mark is None:
             continue
-        examples.append(Example(m.emb, m.meta, m.idx, m.val, mark, 0.0, key=k))
+        examples.append(Example(m.emb, m.meta, m.idx, m.val, mark, key=k))
         mem.add(m.idx, m.val, mark, m.sender)
         marks += 1
         head = personalize(base, examples, example_weights(examples, weighting), priors, tol=1e-6, max_iter=200)
@@ -200,7 +198,7 @@ def missed_campaign(args) -> tuple[int, int, int, int]:
             caught += label == SPAM
             caught_base += base_label == SPAM
         if label != SPAM:
-            examples.append(Example(m.emb, m.meta, m.idx, m.val, 1, 0.0, key=k))
+            examples.append(Example(m.emb, m.meta, m.idx, m.val, 1, key=k))
             mem.add(m.idx, m.val, 1, m.sender)
             marks += 1
             head = personalize(base, examples, example_weights(examples, weighting), priors, tol=1e-6, max_iter=200)
@@ -225,7 +223,7 @@ def variant_campaign(args) -> tuple[int, int, int]:
             right += (label == SPAM) == (m.y == 1)
             right_base += (base_label == SPAM) == (m.y == 1)
         if (label == SPAM) != (m.y == 1):
-            examples.append(Example(m.emb, m.meta, m.idx, m.val, m.y, 0.0, key=k))
+            examples.append(Example(m.emb, m.meta, m.idx, m.val, m.y, key=k))
             mem.add(m.idx, m.val, m.y, m.sender)
             head = personalize(base, examples, example_weights(examples, weighting), priors, tol=1e-6, max_iter=200)
     return n, right, right_base
@@ -265,10 +263,10 @@ def variant_scenarios(pool, params, base, thr, n_variants: int = 4, cap: int = 3
             embs.append(sess.run(["embedding"], {"input_ids": ids, "attention_mask": np.ones_like(ids)})[0][0])
         jobs, j = [], 0
         for c, m in enumerate(seeds):
-            camp = [Msg(m.y, m.emb, m.meta, m.idx, m.val, f"s{c}", False, f"v{c}", m.text)]
+            camp = [Msg(m.y, m.emb, m.meta, m.idx, m.val, f"s{c}", f"v{c}", m.text)]
             for _ in range(n_variants):
                 sender = f"s{c}" if same_sender else f"n{c}-{j}"
-                camp.append(Msg(m.y, embs[j], meta[j], X[j].indices, X[j].data, sender, False, f"v{c}", flat[j]))
+                camp.append(Msg(m.y, embs[j], meta[j], X[j].indices, X[j].data, sender, f"v{c}", flat[j]))
                 j += 1
             jobs.append((camp, params, base, thr))
         with ProcessPoolExecutor(WORKERS) as ex:
@@ -372,7 +370,7 @@ def main() -> int:
     if args.traffic == "transactional":
         personal = (sub["label"] == 0) & (sub["source"].isin(["uci", "mishra"]) | sub["category"].isin(PERSONAL))
         pool_mask = pool_mask & ~personal.to_numpy()
-    pool = [Msg(int(sub["label"][i]), emb[i], meta[i], X[i].indices, X[i].data, "", False, str(sub["cluster_id"][i]),
+    pool = [Msg(int(sub["label"][i]), emb[i], meta[i], X[i].indices, X[i].data, "", str(sub["cluster_id"][i]),
                 str(sub["text"][i])) for i in np.flatnonzero(pool_mask)]
     modern = load_modern_eval()
     dev = modern["split"] == "dev"
@@ -384,7 +382,7 @@ def main() -> int:
         mj = mm[j].copy()
         if row["sender_type"] in KIND:
             mj[KIND[row["sender_type"]]] = 1.0
-        pool.append(Msg(int(row["label"]), em[i], mj, Xm[j].indices, Xm[j].data, "", False, f"modern-{i}", row["text"]))
+        pool.append(Msg(int(row["label"]), em[i], mj, Xm[j].indices, Xm[j].data, "", f"modern-{i}", row["text"]))
     rng = np.random.default_rng(int(cfg["seed"]))
     hams = [m for m in pool if m.y == 0]
     probe_idx = rng.choice(len(hams), size=min(260, len(hams) // 4), replace=False)  # drift measurement only

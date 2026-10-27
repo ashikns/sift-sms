@@ -2,7 +2,7 @@
 
     uv run python -I scripts/s09_evaluate.py
 
-Writes data/work/metrics.json. Gates (see the plan):
+Writes data/work/metrics.json. Gates:
   test        PR-AUC ≥ 0.99; Balanced FPR ≤ 0.5% (cluster-bootstrap 95% upper bound ≤ 1.0%), recall ≥ 95%
   future      recall ≥ 90% at Balanced (campaigns that first appeared after the training cutoff)
   modern      recall ≥ 85%, ham FPR ≤ 2%, OTP false positives: 0 at Conservative, ≤ 1 at Balanced

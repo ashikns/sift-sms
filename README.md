@@ -29,10 +29,9 @@ plain text, never clickable; long-press a message to select and copy all or part
    There are three outcomes: **Not spam**, **Possible spam** (stays in the inbox with a badge), and **Spam** (moved
    to the Spam tab, no notification). OTP-looking messages without links are never fully filtered. On any error the
    message is treated as not spam, so a message is never lost.
-5. **Learn.** After installation, your marks are the only thing Sift learns from: no replies, no reading habits, no
-   other rules. A mark applies to that one message; marking a conversation means its latest incoming message. Each
-   mark is stored on the phone as a training example (the text, its features and your label), so learning survives
-   deleting the message.
+5. **Learn.** After installation, your marks are the only thing Sift learns from: no reading habits, no other rules.
+   A mark applies to that one message. Each mark is stored on the phone as a training example (the text, its
+   features and your label), so learning survives deleting the message.
    - Near-duplicates of the marked message follow your label immediately.
    - A few seconds later the model's word and character n-gram weights retrain lightly on all your marks, anchored
      to the base model. Only messages that share the marked messages' wording are affected.
@@ -88,7 +87,8 @@ legitimate transactional messages get flagged, because delivery and bank scams s
 - Memory-only learning would avoid that drift, but generalizes "Not spam" less well (62% kept).
 - Stronger retraining keeps 88% but drifts 2.8%.
 
-The setting is the `hash` prior in `ml/config/pipeline.yaml`.
+The setting is the `hash` prior that `ml/scripts/s08_simulate.py` writes to `data/work/personalization.json` and
+`s11_package.py` ships in `model.json`.
 
 **On the phone (emulator measurement).** The encoder takes 13 ms (median) / 29 ms (95th percentile) per message.
 Results match the Python reference with zero changed decisions over 733 test cases. On the desktop JVM the match is
@@ -124,8 +124,8 @@ default SMS app.
 
 ### Switching back
 
-Settings → Apps → Default apps → SMS app → Google Messages. Every message Sift sent or received is in the
-system's message store, so it shows up there too.
+Settings → Apps → Default apps → SMS app → Google Messages. Every message Sift received is in the system's
+message store, so it shows up there too.
 
 ## Repository layout
 
@@ -171,5 +171,5 @@ A separate set of 400 hand-written modern US messages is used for evaluation onl
 
 - Scam "openers" with no link or ask ("Hi, is this Sarah?") read exactly like real first messages. The base model
   lets them through; your marks and the first-contact signal handle them.
-- Not in v1: MMS, search, blocking, choosing a SIM per message.
+- Not in v1: MMS, search, blocking.
 - Learned data is deliberately excluded from cloud backup. Clearing the app's data resets what it learned.

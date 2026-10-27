@@ -7,7 +7,7 @@ there. The signal is strong in practice: US short codes are carrier-vetted and a
 ~19.5k NCSU messages), while email-to-SMS gateways and international numbers are scam favorites. This step grid-searches
 those weights on eval/modern_v1.jsonl's dev split only (the test split stays untouched for s09), maximizing
 recall - 5·FPR at the Balanced threshold, preferring smaller weights on ties. It writes them into head_base.bin
-(full and fallback heads); on the phone they're personalized further, anchored by the sender prior.
+(full and fallback heads); on-device learning never changes them.
 """
 
 from __future__ import annotations

@@ -37,9 +37,6 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id IN (:ids)")
     suspend fun deleteIds(ids: List<Long>)
 
-    @Query("DELETE FROM messages WHERE threadId = :threadId")
-    suspend fun deleteThread(threadId: Long)
-
     @Query("SELECT id FROM messages WHERE threadId = :threadId")
     suspend fun idsInThread(threadId: Long): List<Long>
 
@@ -50,40 +47,22 @@ interface MessageDao {
     suspend fun clearMissing(ids: List<Long>)
 
     @Query(
-        "UPDATE messages SET type = :type, status = :status, errorCode = :errorCode, read = :read, seen = :seen, " +
-            "threadId = :threadId, subId = :subId, mutableHash = :mutableHash, missingSince = NULL WHERE id = :id",
+        "UPDATE messages SET type = :type, status = :status, read = :read, threadId = :threadId, " +
+            "mutableHash = :mutableHash, missingSince = NULL WHERE id = :id",
     )
-    suspend fun updateMutable(
-        id: Long, type: Int, status: Int, errorCode: Int, read: Boolean, seen: Boolean, threadId: Long, subId: Int,
-        mutableHash: Int,
-    )
+    suspend fun updateMutable(id: Long, type: Int, status: Int, read: Boolean, threadId: Long, mutableHash: Int)
 
     @Query("SELECT DISTINCT threadId FROM messages WHERE id IN (:ids)")
     suspend fun threadsOf(ids: List<Long>): List<Long>
 
-    @Query("SELECT DISTINCT threadId FROM messages")
-    suspend fun allThreads(): List<Long>
-
-    @Query("UPDATE messages SET read = 1, seen = 1 WHERE threadId = :threadId AND (read = 0 OR seen = 0)")
+    @Query("UPDATE messages SET read = 1 WHERE threadId = :threadId AND read = 0")
     suspend fun markThreadRead(threadId: Long): Int
-
-    @Query("SELECT COUNT(*) FROM messages WHERE senderKey = :senderKey AND type != 1")
-    suspend fun outgoingCount(senderKey: String): Int
 
     @Query(
         "SELECT COUNT(*) FROM messages WHERE senderKey = :senderKey AND type = 1 AND id != :excludeId AND " +
             "(date < :before OR (date = :before AND id < :excludeId))",
     )
     suspend fun earlierIncomingCount(senderKey: String, excludeId: Long, before: Long): Int
-
-    @Query("SELECT * FROM messages WHERE threadId = :threadId AND type = 1 ORDER BY date DESC, id DESC LIMIT :limit")
-    suspend fun latestIncoming(threadId: Long, limit: Int): List<MessageEntity>
-
-    @Query(
-        "SELECT m.* FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
-            "WHERE m.threadId = :threadId AND m.type = 1 AND (c.userLabel IS NULL) ORDER BY m.date DESC, m.id DESC LIMIT :limit",
-    )
-    suspend fun latestUnlabeledIncoming(threadId: Long, limit: Int): List<MessageEntity>
 
     @Query(
         "SELECT m.* FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
@@ -120,13 +99,10 @@ interface MessageDao {
     )
     suspend fun rescanRemainingIds(startedAt: Long): List<Long>
 
-    @Query("SELECT * FROM messages WHERE type IN (4, 6) AND date < :before")
-    suspend fun staleOutbox(before: Long): List<MessageEntity>
-
     @Query(
-        "SELECT m.id, m.threadId, m.address, m.senderKey, m.senderKind, m.body, m.date, m.dateSent, m.type, m.status, " +
-            "m.errorCode, m.read, COALESCE(c.effectiveLabel, 0) AS effectiveLabel, c.effectiveSource AS effectiveSource, " +
-            "c.modelScore AS modelScore, c.reason AS reason, c.cues AS cues, c.similarMessageId AS similarMessageId, " +
+        "SELECT m.id, m.threadId, m.address, m.body, m.date, m.type, m.status, m.read, " +
+            "COALESCE(c.effectiveLabel, 0) AS effectiveLabel, c.effectiveSource AS effectiveSource, " +
+            "c.modelScore AS modelScore, c.reason AS reason, c.cues AS cues, " +
             "c.userLabel AS userLabel, c.state AS classState, c.modelVersion AS modelVersion " +
             "FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
             "WHERE m.threadId = :threadId ORDER BY m.date DESC, m.id DESC LIMIT :limit",
@@ -134,9 +110,9 @@ interface MessageDao {
     fun observeThread(threadId: Long, limit: Int): Flow<List<ThreadMessageRow>>
 
     @Query(
-        "SELECT m.id, m.threadId, m.address, m.senderKey, m.senderKind, m.body, m.date, m.dateSent, m.type, m.status, " +
-            "m.errorCode, m.read, COALESCE(c.effectiveLabel, 0) AS effectiveLabel, c.effectiveSource AS effectiveSource, " +
-            "c.modelScore AS modelScore, c.reason AS reason, c.cues AS cues, c.similarMessageId AS similarMessageId, " +
+        "SELECT m.id, m.threadId, m.address, m.body, m.date, m.type, m.status, m.read, " +
+            "COALESCE(c.effectiveLabel, 0) AS effectiveLabel, c.effectiveSource AS effectiveSource, " +
+            "c.modelScore AS modelScore, c.reason AS reason, c.cues AS cues, " +
             "c.userLabel AS userLabel, c.state AS classState, c.modelVersion AS modelVersion " +
             "FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
             "WHERE m.threadId = :threadId AND m.type = 1 AND m.read = 0 AND COALESCE(c.effectiveLabel, 0) != 2 " +
@@ -145,9 +121,9 @@ interface MessageDao {
     suspend fun unreadNotSpam(threadId: Long, limit: Int): List<ThreadMessageRow>
 
     @Query(
-        "SELECT m.id, m.threadId, m.address, m.senderKey, m.senderKind, m.body, m.date, m.dateSent, m.type, m.status, " +
-            "m.errorCode, m.read, COALESCE(c.effectiveLabel, 0) AS effectiveLabel, c.effectiveSource AS effectiveSource, " +
-            "c.modelScore AS modelScore, c.reason AS reason, c.cues AS cues, c.similarMessageId AS similarMessageId, " +
+        "SELECT m.id, m.threadId, m.address, m.body, m.date, m.type, m.status, m.read, " +
+            "COALESCE(c.effectiveLabel, 0) AS effectiveLabel, c.effectiveSource AS effectiveSource, " +
+            "c.modelScore AS modelScore, c.reason AS reason, c.cues AS cues, " +
             "c.userLabel AS userLabel, c.state AS classState, c.modelVersion AS modelVersion " +
             "FROM messages m LEFT JOIN classifications c ON c.messageId = m.id ORDER BY m.date DESC, m.id DESC LIMIT :limit",
     )
@@ -199,9 +175,6 @@ interface ClassificationDao {
             "effectiveSource = :source WHERE messageId = :id",
     )
     suspend fun setUserLabel(id: Long, userLabel: Int?, at: Long?, effective: Int, source: String)
-
-    @Query("SELECT COUNT(*) FROM classifications WHERE userLabel = :label")
-    suspend fun userLabelCount(label: Int): Int
 }
 
 @Dao
@@ -219,40 +192,25 @@ interface ConversationDao {
     )
     fun observe(threadId: Long): Flow<ConversationRow?>
 
-    @Query("SELECT * FROM conversations WHERE threadId = :threadId")
-    suspend fun get(threadId: Long): ConversationEntity?
-
     @Query("SELECT * FROM conversations ORDER BY latestDate DESC")
     suspend fun all(): List<ConversationEntity>
 
     @Query("SELECT threadId, folder FROM conversations")
     suspend fun folders(): List<ThreadFolder>
 
-    @Query(
-        "SELECT folder, COUNT(*) AS conversations, SUM(CASE WHEN unreadCount > 0 THEN 1 ELSE 0 END) AS unread " +
-            "FROM conversations GROUP BY folder",
-    )
-    fun observeCounts(): Flow<List<FolderCount>>
-
     @Query("DELETE FROM conversations WHERE threadId IN (:ids)")
     suspend fun deleteThreads(ids: List<Long>)
-
-    @Query("DELETE FROM conversations")
-    suspend fun deleteAll()
 
     @Query(PROJECTION_INSERT + PROJECTION_SELECT + " WHERE threadId IN (:ids) GROUP BY threadId) t" + PROJECTION_JOINS)
     suspend fun insertProjection(ids: List<Long>)
 
-    @Query(PROJECTION_INSERT + PROJECTION_SELECT + " GROUP BY threadId) t" + PROJECTION_JOINS)
-    suspend fun insertProjectionAll()
-
     companion object {
         private const val PROJECTION_INSERT =
             "INSERT OR REPLACE INTO conversations (threadId, senderKey, address, latestMessageId, latestDate, snippet, " +
-                "latestType, latestIncomingId, unreadCount, messageCount, folder, latestLabel) "
+                "latestType, unreadCount, messageCount, folder, latestLabel) "
         private const val PROJECTION_SELECT =
             "SELECT t.threadId, COALESCE(li.senderKey, lm.senderKey), COALESCE(li.address, lm.address), lm.id, lm.date, " +
-                "lm.body, lm.type, li.id, " +
+                "lm.body, lm.type, " +
                 "(SELECT COUNT(*) FROM messages u WHERE u.threadId = t.threadId AND u.type = 1 AND u.read = 0), t.cnt, " +
                 "CASE WHEN COALESCE(cl.effectiveLabel, 0) = 2 THEN 1 ELSE 0 END, COALESCE(cl.effectiveLabel, 0) " +
                 "FROM (SELECT threadId, COUNT(*) AS cnt FROM messages"
@@ -268,9 +226,6 @@ interface ConversationDao {
 interface ContactsCacheDao {
     @Upsert
     suspend fun upsertAll(rows: List<ContactCacheEntity>)
-
-    @Query("SELECT * FROM contacts_cache WHERE senderKey = :senderKey")
-    suspend fun get(senderKey: String): ContactCacheEntity?
 }
 
 @Dao
@@ -306,9 +261,6 @@ interface TrainingExampleDao {
     @Query("DELETE FROM training_examples WHERE messageId IN (:ids)")
     suspend fun deleteIds(ids: List<Long>)
 
-    @Query("DELETE FROM training_examples")
-    suspend fun clear()
-
     @Query("SELECT * FROM training_examples WHERE messageId = :id")
     suspend fun get(id: Long): TrainingExampleEntity?
 
@@ -330,7 +282,4 @@ interface EmbeddingDao {
 
     @Query("DELETE FROM message_embeddings WHERE messageId IN (:ids)")
     suspend fun deleteIds(ids: List<Long>)
-
-    @Query("DELETE FROM message_embeddings WHERE createdAt < :before")
-    suspend fun deleteOlderThan(before: Long)
 }

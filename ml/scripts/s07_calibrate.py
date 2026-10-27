@@ -5,7 +5,8 @@
 Thresholds are set on val_a + val_b hams so that at most floor(target · n_ham) hams score at or above them
 (FPR is independent of the spam/ham mix). Separate sets for the full head and the lexical-only fallback.
 The near-duplicate check measures, for validation messages and their nearest training neighbour by n-gram
-cosine, how often the labels agree above each cutoff. Writes data/work/calibration.json.
+cosine, how often the labels agree above each cutoff, and picks the ham-match cutoff (s08 tunes the spam one).
+Writes data/work/calibration.json.
 """
 
 from __future__ import annotations
@@ -96,7 +97,6 @@ def main() -> int:
         return default
 
     out["knn"] = {
-        "tau_spam": pick(1, 0.995, cfg["knn"]["tau_spam"]),
         "tau_ham": max(pick(0, 0.999, cfg["knn"]["tau_ham"]), cfg["knn"]["tau_ham"]),
         "table": table,
     }

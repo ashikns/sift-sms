@@ -6,7 +6,8 @@
 - Lexical LR on [hashed n-grams | centered metadata]; embedding LR on centered embeddings (class-balanced).
 - A 3-parameter stacker z = a·z_embed + c·z_lexical + d (a, c ≥ 0) fit on val_a, folded into one linear model.
 - Fallback head (no encoder) = the lexical LR alone: fb_bias = b_l, fb_scale = 1/c, w_meta_fb = w_l,meta.
-Writes data/work/bundle/head_base.bin and data/work/features.npz (sparse/meta for every non-capped row).
+Writes data/work/bundle/head_base.bin, data/work/features_X.npz + features_meta.npy (sparse/meta for every non-capped
+row) and data/work/heads_report.json.
 """
 
 from __future__ import annotations
@@ -66,7 +67,6 @@ def main() -> int:
     X, meta = featurize(sub["text"].tolist(), idf)
     sp.save_npz(work("features_X.npz"), X)
     np.save(work("features_meta.npy"), meta)
-    np.save(work("idf.npy"), idf)
 
     mu_e = emb[tr].mean(axis=0).astype(np.float32)
     mu_m = meta[tr].mean(axis=0).astype(np.float32)

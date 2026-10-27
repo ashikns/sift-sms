@@ -7,18 +7,15 @@ import dev.ashik.sift.spamcore.SenderKind
 import java.util.Locale
 
 /**
- * A sender's normalized identity. Per-sender state (verdicts, contacts, trust) is keyed by [key], never by
+ * A sender's normalized identity. Per-sender data (contact names, sender history) is keyed by [key], never by
  * thread id, because the provider can recreate a thread with a new id.
  */
 data class SenderKey(
     val key: String,
     val kind: SenderKind,
-    /** A +1 (North American Numbering Plan) number. */
-    val nanp: Boolean,
     /** The number's country calling code differs from the SIM's. */
     val international: Boolean,
-) {
-}
+)
 
 class AddressNormalizer(private val countryIso: () -> String) {
 
@@ -37,25 +34,24 @@ class AddressNormalizer(private val countryIso: () -> String) {
         /** Pure classification; [e164] formats a number for a region or returns null when it can't. */
         fun classify(raw: String?, iso: String, e164: (String, String) -> String?): SenderKey {
             val a = raw?.trim().orEmpty()
-            if (a.isEmpty()) return SenderKey("unknown", SenderKind.UNKNOWN, nanp = false, international = false)
-            if ('@' in a) return SenderKey(a.lowercase(Locale.ROOT), SenderKind.EMAIL, nanp = false, international = false)
+            if (a.isEmpty()) return SenderKey("unknown", SenderKind.UNKNOWN, international = false)
+            if ('@' in a) return SenderKey(a.lowercase(Locale.ROOT), SenderKind.EMAIL, international = false)
             val digits = a.filter { it in '0'..'9' }
             if (a.any { it.isLetter() }) {
                 val key = a.uppercase(Locale.ROOT).split(' ', '\t').filter { it.isNotEmpty() }.joinToString(" ")
-                return SenderKey(key, SenderKind.ALPHANUMERIC, nanp = false, international = false)
+                return SenderKey(key, SenderKind.ALPHANUMERIC, international = false)
             }
-            if (digits.isEmpty()) return SenderKey(a, SenderKind.UNKNOWN, nanp = false, international = false)
+            if (digits.isEmpty()) return SenderKey(a, SenderKind.UNKNOWN, international = false)
             val plus = a.startsWith("+")
             if (!plus && digits.length in 3..6) {
-                return SenderKey(digits, SenderKind.SHORT_CODE, nanp = false, international = false)
+                return SenderKey(digits, SenderKind.SHORT_CODE, international = false)
             }
             val region = iso.uppercase(Locale.ROOT)
             val home = CountryCodes.callingCode(region)
             val key = runCatching { e164(a, region) }.getOrNull()?.takeIf { it.startsWith("+") }
                 ?: fallbackE164(digits, plus, home)
-            val nanp = key.startsWith("+1") && key.length == 12
             val international = home != null && key.startsWith("+") && !key.startsWith("+$home")
-            return SenderKey(key, SenderKind.PHONE, nanp, international)
+            return SenderKey(key, SenderKind.PHONE, international)
         }
 
         private fun fallbackE164(digits: String, plus: Boolean, home: String?): String = when {

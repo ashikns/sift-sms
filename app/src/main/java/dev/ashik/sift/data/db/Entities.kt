@@ -23,13 +23,9 @@ data class MessageEntity(
     val senderKind: String,
     val body: String,
     val date: Long,
-    val dateSent: Long,
     val type: Int,
     val status: Int,
     val read: Boolean,
-    val seen: Boolean,
-    val subId: Int,
-    val errorCode: Int,
     val fingerprint: Long,
     val mutableHash: Int,
     /** Set when the row disappeared from the provider but is too young to delete (OTP protection can hide rows). */
@@ -67,7 +63,6 @@ data class ConversationEntity(
     val latestDate: Long,
     val snippet: String,
     val latestType: Int,
-    val latestIncomingId: Long?,
     val unreadCount: Int,
     val messageCount: Int,
     val folder: Int,
@@ -80,8 +75,6 @@ data class ContactCacheEntity(
     @PrimaryKey val senderKey: String,
     val displayName: String?,
     val photoUri: String?,
-    val isContact: Boolean,
-    val refreshedAt: Long,
 )
 
 @Entity(tableName = "feedback_events", indices = [Index(value = ["batchId"]), Index(value = ["createdAt"])])
@@ -90,7 +83,6 @@ data class FeedbackEventEntity(
     val batchId: Long,
     val kind: Int,
     val messageId: Long,
-    val senderKey: String,
     /** The new label (user label code for EXPLICIT, effective label code for AUTO_MOVE). */
     val label: Int,
     val prevUserLabel: Int?,
@@ -139,21 +131,16 @@ data class ThreadMessageRow(
     val id: Long,
     val threadId: Long,
     val address: String,
-    val senderKey: String,
-    val senderKind: String,
     val body: String,
     val date: Long,
-    val dateSent: Long,
     val type: Int,
     val status: Int,
-    val errorCode: Int,
     val read: Boolean,
     val effectiveLabel: Int,
     val effectiveSource: String?,
     val modelScore: Float?,
     val reason: String?,
     val cues: String?,
-    val similarMessageId: Long?,
     val userLabel: Int?,
     val classState: Int?,
     val modelVersion: Int?,
@@ -167,8 +154,6 @@ data class MessageKey(
     val threadId: Long,
     val missingSince: Long?,
 )
-
-data class FolderCount(val folder: Int, val conversations: Int, val unread: Int)
 
 data class ThreadFolder(val threadId: Long, val folder: Int)
 

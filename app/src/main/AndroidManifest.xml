@@ -102,7 +102,6 @@
             </intent-filter>
         </receiver>
 
-
         <receiver
             android:name=".telephony.receiver.NotificationActionReceiver"
             android:exported="false" />

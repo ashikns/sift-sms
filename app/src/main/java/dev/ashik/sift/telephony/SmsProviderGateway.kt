@@ -18,13 +18,9 @@ data class ProviderSms(
     val address: String,
     val body: String?,
     val date: Long,
-    val dateSent: Long,
     val type: Int,
     val read: Boolean,
-    val seen: Boolean,
     val status: Int,
-    val errorCode: Int,
-    val subId: Int,
 )
 
 /** Everything the app writes to or reads from `content://sms` goes through here. */
@@ -83,10 +79,6 @@ class SmsProviderGateway(context: Context) {
     fun deleteThreadSms(threadId: Long): Int =
         resolver.delete(Sms.CONTENT_URI, "${Sms.THREAD_ID} = ?", arrayOf(threadId.toString()))
 
-    fun exists(id: Long): Boolean =
-        resolver.query(ContentUris.withAppendedId(Sms.CONTENT_URI, id), arrayOf(Sms._ID), null, null, null)
-            ?.use { it.moveToFirst() } == true
-
     fun query(id: Long): ProviderSms? =
         resolver.query(ContentUris.withAppendedId(Sms.CONTENT_URI, id), FULL, null, null, null)
             ?.use { c -> if (c.moveToFirst()) read(c, withBody = true) else null }
@@ -143,21 +135,14 @@ class SmsProviderGateway(context: Context) {
         address = c.getString(c.getColumnIndexOrThrow(Sms.ADDRESS)).orEmpty(),
         body = if (withBody) c.getString(c.getColumnIndexOrThrow(Sms.BODY)).orEmpty() else null,
         date = c.getLong(c.getColumnIndexOrThrow(Sms.DATE)),
-        dateSent = if (withBody) c.getLong(c.getColumnIndexOrThrow(Sms.DATE_SENT)) else 0L,
         type = c.getInt(c.getColumnIndexOrThrow(Sms.TYPE)),
         read = c.getInt(c.getColumnIndexOrThrow(Sms.READ)) != 0,
-        seen = c.getInt(c.getColumnIndexOrThrow(Sms.SEEN)) != 0,
         status = c.getInt(c.getColumnIndexOrThrow(Sms.STATUS)),
-        errorCode = c.getInt(c.getColumnIndexOrThrow(Sms.ERROR_CODE)),
-        subId = c.getInt(c.getColumnIndexOrThrow(Sms.SUBSCRIPTION_ID)),
     )
 
     private companion object {
-        val KEYS = arrayOf(
-            Sms._ID, Sms.THREAD_ID, Sms.ADDRESS, Sms.DATE, Sms.TYPE, Sms.READ, Sms.SEEN, Sms.STATUS, Sms.ERROR_CODE,
-            Sms.SUBSCRIPTION_ID,
-        )
-        val FULL = KEYS + arrayOf(Sms.BODY, Sms.DATE_SENT)
+        val KEYS = arrayOf(Sms._ID, Sms.THREAD_ID, Sms.ADDRESS, Sms.DATE, Sms.TYPE, Sms.READ, Sms.STATUS)
+        val FULL = KEYS + Sms.BODY
         const val NOT_DRAFT = "${Sms.TYPE} != ${MsgType.DRAFT}"
     }
 }

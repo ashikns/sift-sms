@@ -28,8 +28,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *     adb shell content query --uri content://dev.ashik.sift.debug/conversations
  *     adb shell content query --uri content://dev.ashik.sift.debug/messages
  *     adb shell content call --uri content://dev.ashik.sift.debug --method awaitIdle
- *     adb shell content call --uri content://dev.ashik.sift.debug --method markSpam --arg <messageId | thread:<id>>
- *     adb shell content call --uri content://dev.ashik.sift.debug --method resetLearning
+ *     adb shell content call --uri content://dev.ashik.sift.debug --method markSpam --arg <messageId>
+ *     adb shell content call --uri content://dev.ashik.sift.debug --method forgetLearning
  *     adb shell content call --uri content://dev.ashik.sift.debug --method seedHistory --arg <count>
  *     adb shell content call --uri content://dev.ashik.sift.debug --method seedStats
  *     adb shell content call --uri content://dev.ashik.sift.debug --method rescan
@@ -49,10 +49,10 @@ class DebugStateProvider : ContentProvider() {
         return runBlocking(Dispatchers.IO) {
             when (uri.pathSegments.firstOrNull()) {
                 "conversations" -> MatrixCursor(
-                    arrayOf("threadId", "address", "senderKey", "folder", "latestLabel", "unreadCount", "messageCount", "latestIncomingId", "snippet"),
+                    arrayOf("threadId", "address", "senderKey", "folder", "latestLabel", "unreadCount", "messageCount", "snippet"),
                 ).apply {
                     graph.db.conversations().all().forEach {
-                        addRow(arrayOf<Any?>(it.threadId, it.address, it.senderKey, it.folder, it.latestLabel, it.unreadCount, it.messageCount, it.latestIncomingId, it.snippet.take(60)))
+                        addRow(arrayOf<Any?>(it.threadId, it.address, it.senderKey, it.folder, it.latestLabel, it.unreadCount, it.messageCount, it.snippet.take(60)))
                     }
                 }
                 "messages" -> MatrixCursor(
@@ -80,18 +80,16 @@ class DebugStateProvider : ContentProvider() {
                     "awaitIdle" -> out.putBoolean("idle", awaitIdle())
                     "markSpam", "markNotSpam" -> {
                         val label = if (method == "markSpam") UserLabel.SPAM else UserLabel.HAM
-                        val target = arg.orEmpty()
-                        val result = if (target.startsWith("thread:")) {
-                            graph.feedback.markThreads(listOf(target.removePrefix("thread:").toLong()), label)
-                        } else {
-                            graph.feedback.markMessages(listOf(target.toLong()), label)
-                        }
+                        val result = graph.feedback.markMessages(listOf(arg!!.toLong()), label)
                         out.putLong("batchId", result.batchId)
                         out.putInt("marked", result.marked)
                         out.putInt("moved", result.moved)
                     }
                     "undo" -> graph.feedback.undo(arg!!.toLong())
-                    "resetLearning" -> graph.engine.reset()
+                    "forgetLearning" -> {
+                        graph.feedback.forgetLearned(graph.db.trainingExamples().all().map { it.messageId })
+                        graph.engine.awaitIdle()
+                    }
                     "reconcile" -> graph.sync.fullReconcile()
                     "incremental" -> graph.sync.incremental()
                     "seedHistory" -> out.putInt("seeded", seedHistory(arg?.toIntOrNull() ?: 800))

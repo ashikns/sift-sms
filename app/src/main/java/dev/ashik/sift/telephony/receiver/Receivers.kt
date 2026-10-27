@@ -8,8 +8,6 @@ import android.provider.Telephony
 import android.util.Log
 import dev.ashik.sift.SiftApp
 import dev.ashik.sift.di.AppGraph
-import dev.ashik.sift.spam.work.SyncWorker
-import dev.ashik.sift.spamcore.UserLabel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 
@@ -57,7 +55,7 @@ class DefaultSmsChangedReceiver : BroadcastReceiver() {
             graph.observer.register()
             // Catch up right away on what arrived while another app was default; WorkManager is the fallback
             // for an inbox too big to reconcile within the broadcast's budget.
-            graph.scheduler.enqueueSync(SyncWorker.MODE_FULL)
+            graph.scheduler.enqueueSync()
             runAsync(context, 8_000) { it.sync.fullReconcile() }
         } else {
             graph.observer.unregister()
@@ -73,7 +71,7 @@ class ExternalProviderChangeReceiver : BroadcastReceiver() {
     }
 }
 
-/** Mark read / Spam / Not spam from a notification. */
+/** Mark read from a notification. */
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val threadId = intent.getLongExtra(EXTRA_THREAD_ID, -1L).takeIf { it > 0 } ?: return
@@ -82,21 +80,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 graph.repository.markThreadRead(threadId)
                 graph.notifier.cancelThread(threadId)
             }
-            ACTION_MARK_SPAM -> runAsync(context, 8_000) { graph ->
-                graph.notifier.cancelThread(threadId)
-                graph.feedback.markThreads(listOf(threadId), UserLabel.SPAM)
-            }
-            ACTION_NOT_SPAM -> runAsync(context, 8_000) { graph ->
-                graph.notifier.cancelThread(threadId)
-                graph.feedback.markThreads(listOf(threadId), UserLabel.HAM)
-            }
         }
     }
 
     companion object {
         const val ACTION_MARK_READ = "dev.ashik.sift.action.MARK_READ"
-        const val ACTION_MARK_SPAM = "dev.ashik.sift.action.MARK_SPAM"
-        const val ACTION_NOT_SPAM = "dev.ashik.sift.action.NOT_SPAM"
         const val EXTRA_THREAD_ID = "threadId"
     }
 }

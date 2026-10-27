@@ -88,8 +88,6 @@ class RoomExampleStore(private val db: AppDatabase) : ExampleStore {
         messageIds.toList().chunked(500).forEach { db.trainingExamples().deleteIds(it) }
     }
 
-    override suspend fun clear() = db.trainingExamples().clear()
-
     private fun TrainingExampleEntity.toExample() = TrainingExample(
         messageId = messageId,
         body = body,
@@ -122,10 +120,6 @@ object FolderPolicy {
         null -> engineLabel ?: LabelCode.HAM
         else -> LabelCode.of(UserLabelCode.toUserLabel(userLabel))
     }
-
-    /** A conversation is in Spam if and only if its latest incoming message is effectively spam. */
-    fun folderOf(latestIncomingEffective: Int?): Int =
-        if (latestIncomingEffective == LabelCode.SPAM) dev.ashik.sift.data.db.Folder.SPAM else dev.ashik.sift.data.db.Folder.INBOX
 }
 
 /** Conversations a rescan moved between Inbox and Spam (ones that appeared or disappeared meanwhile don't count). */

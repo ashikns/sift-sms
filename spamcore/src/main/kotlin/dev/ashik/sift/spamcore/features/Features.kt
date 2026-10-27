@@ -19,8 +19,6 @@ class SparseVector(val indices: IntArray, val values: FloatArray) {
     val size: Int get() = indices.size
 
     companion object {
-        val EMPTY = SparseVector(IntArray(0), FloatArray(0))
-
         /** Cosine accumulated in double (ml/SPEC.md near-duplicate similarity). */
         fun cosine(a: SparseVector, b: SparseVector): Double {
             if (a.norm == 0.0 || b.norm == 0.0) return 0.0
