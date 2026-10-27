@@ -29,7 +29,7 @@ class ThreadViewModel(private val graph: AppGraph, key: ThreadKey) : ViewModel()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val messages: StateFlow<List<ThreadMessageRow>?> = threadId
-        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else graph.db.messages().observeThread(id, 500) }
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else graph.db.messages().observeThread(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** For each mark, the job that re-checks this thread with the retrained model. */

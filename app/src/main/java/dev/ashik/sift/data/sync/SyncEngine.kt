@@ -99,23 +99,7 @@ class SyncEngine(
         scheduler.enqueueSync(markInitialDone = true)
     }
 
-    /** New rows after Room's max id, plus a diff of the last 7 days; escalates to a full reconcile on count drift. */
-    suspend fun incremental() = mutex.withLock {
-        if (!role.isHeldNow()) return@withLock
-        val now = System.currentTimeMillis()
-        val maxId = db.messages().maxId() ?: 0L
-        val newKeys = withContext(Dispatchers.IO) { gateway.keysAfter(maxId) }
-        var imported = 0
-        if (newKeys.isNotEmpty()) imported += importRows(newKeys.map { it.id })
-        val since = now - RECENT_MS
-        val providerRecent = withContext(Dispatchers.IO) { gateway.keysSince(since) }
-        val roomRecent = db.messages().keysSince(since)
-        imported += apply(ReconcilePlanner.plan(providerRecent, roomRecent, now))
-        val providerCount = withContext(Dispatchers.IO) { gateway.count() }
-        if (providerCount != db.messages().countPresent()) imported += fullLocked()
-        if (imported > 0) scheduler.enqueueBackfill()
-    }
-
+    /** Diffs every provider row against the mirror (new, changed and deleted rows) and classifies what it imported. */
     suspend fun fullReconcile() = mutex.withLock {
         if (!role.isHeldNow()) return@withLock
         if (fullLocked() > 0) scheduler.enqueueBackfill()
@@ -164,6 +148,5 @@ class SyncEngine(
 
     private companion object {
         const val TAG = "SiftSync"
-        const val RECENT_MS = 7L * 24 * 60 * 60 * 1000
     }
 }

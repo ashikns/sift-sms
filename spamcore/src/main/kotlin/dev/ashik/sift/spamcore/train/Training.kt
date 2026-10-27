@@ -36,20 +36,16 @@ data class Weighting(
     val ham: Double = 1.0,
     val clusterCap: Double = 2.0,
     val clusterCos: Double = 0.8,
-    val maxExamples: Int = 5000,
 )
 
-/** Mirrors ml/src/smsml/head.py example_weights: base weights, newest-N limit, leader-clustered caps. */
+/** Mirrors ml/src/smsml/head.py example_weights: base weights over all marks, leader-clustered caps. */
 object ExampleWeighting {
     fun weights(examples: List<PreparedExample>, w: Weighting): DoubleArray {
         val n = examples.size
         val base = DoubleArray(n) { i -> if (examples[i].label == 1) w.spam else w.ham }
-        val keep = BooleanArray(n) { it >= n - w.maxExamples } // examples are oldest-first
-        for (i in 0 until n) if (!keep[i]) base[i] = 0.0
         val leaders = ArrayList<Int>()
         val clusterOf = IntArray(n) { -1 }
         for (i in 0 until n) {
-            if (!keep[i]) continue
             val e = examples[i]
             var joined = -1
             for ((c, lead) in leaders.withIndex()) {
@@ -67,10 +63,10 @@ object ExampleWeighting {
             }
         }
         val totals = DoubleArray(leaders.size)
-        for (i in 0 until n) if (keep[i]) totals[clusterOf[i]] += base[i]
+        for (i in 0 until n) totals[clusterOf[i]] += base[i]
         val out = base.copyOf()
         for (i in 0 until n) {
-            if (keep[i] && totals[clusterOf[i]] > w.clusterCap) out[i] = base[i] * (w.clusterCap / totals[clusterOf[i]])
+            if (totals[clusterOf[i]] > w.clusterCap) out[i] = base[i] * (w.clusterCap / totals[clusterOf[i]])
         }
         return out
     }

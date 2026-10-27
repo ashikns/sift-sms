@@ -19,20 +19,11 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE id IN (:ids)")
     suspend fun getAll(ids: List<Long>): List<MessageEntity>
 
-    @Query("SELECT MAX(id) FROM messages")
-    suspend fun maxId(): Long?
-
-    @Query("SELECT COUNT(*) FROM messages WHERE missingSince IS NULL")
-    suspend fun countPresent(): Int
-
     @Query("SELECT COUNT(*) FROM messages")
     suspend fun count(): Int
 
     @Query("SELECT id, fingerprint, mutableHash, date, threadId, missingSince FROM messages ORDER BY id")
     suspend fun allKeys(): List<MessageKey>
-
-    @Query("SELECT id, fingerprint, mutableHash, date, threadId, missingSince FROM messages WHERE date >= :since ORDER BY id")
-    suspend fun keysSince(since: Long): List<MessageKey>
 
     @Query("DELETE FROM messages WHERE id IN (:ids)")
     suspend fun deleteIds(ids: List<Long>)
@@ -65,18 +56,6 @@ interface MessageDao {
     suspend fun earlierIncomingCount(senderKey: String, excludeId: Long, before: Long): Int
 
     @Query(
-        "SELECT m.* FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
-            "WHERE m.type = 1 AND m.date >= :since AND c.userLabel IS NULL ORDER BY m.date DESC, m.id DESC LIMIT :limit",
-    )
-    suspend fun recentUnlabeledIncoming(since: Long, limit: Int): List<MessageEntity>
-
-    @Query(
-        "SELECT m.* FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
-            "WHERE m.type = 1 AND m.senderKey IN (:senderKeys) AND c.userLabel IS NULL ORDER BY m.date DESC LIMIT :limit",
-    )
-    suspend fun unlabeledIncomingFrom(senderKeys: List<String>, limit: Int): List<MessageEntity>
-
-    @Query(
         "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
             "WHERE m.type = 1 AND c.userLabel IS NULL AND m.threadId NOT IN (:skipThreads) ORDER BY m.date DESC, m.id DESC",
     )
@@ -90,10 +69,9 @@ interface MessageDao {
 
     @Query(
         "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
-            "WHERE m.type = 1 AND m.date >= :since AND (c.messageId IS NULL OR c.state = 0) " +
-            "ORDER BY m.date DESC, m.id DESC LIMIT :limit",
+            "WHERE m.type = 1 AND (c.messageId IS NULL OR c.state = 0) ORDER BY m.date DESC, m.id DESC",
     )
-    suspend fun unclassifiedIncomingIds(since: Long, limit: Int): List<Long>
+    suspend fun unclassifiedIncomingIds(): List<Long>
 
     /** Incoming messages a rescan covers: every one without a user label, except pending ones (ClassifyPendingWorker's). */
     @Query(
@@ -117,9 +95,9 @@ interface MessageDao {
             "c.modelScore AS modelScore, c.reason AS reason, c.cues AS cues, " +
             "c.userLabel AS userLabel, c.state AS classState, c.modelVersion AS modelVersion " +
             "FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
-            "WHERE m.threadId = :threadId ORDER BY m.date DESC, m.id DESC LIMIT :limit",
+            "WHERE m.threadId = :threadId ORDER BY m.date DESC, m.id DESC",
     )
-    fun observeThread(threadId: Long, limit: Int): Flow<List<ThreadMessageRow>>
+    fun observeThread(threadId: Long): Flow<List<ThreadMessageRow>>
 
     @Query(
         "SELECT m.id, m.threadId, m.address, m.body, m.date, m.type, m.status, m.read, " +
@@ -141,14 +119,11 @@ interface MessageDao {
     )
     suspend fun debugMessages(limit: Int): List<ThreadMessageRow>
 
-    @Query("SELECT (date / 604800000) AS week, COUNT(*) AS count FROM messages WHERE type = 1 AND date >= :since GROUP BY week")
-    suspend fun incomingPerWeek(since: Long): List<WeekCount>
+    @Query("SELECT (date / 604800000) AS week, COUNT(*) AS count FROM messages WHERE type = 1 GROUP BY week")
+    suspend fun incomingPerWeek(): List<WeekCount>
 
     @Query("SELECT DISTINCT senderKey FROM messages WHERE senderKind = 'PHONE'")
     suspend fun phoneSenderKeys(): List<String>
-
-    @Query("SELECT DISTINCT senderKey FROM messages WHERE type = 1")
-    suspend fun incomingSenderKeys(): List<String>
 
     @Query("SELECT threadId FROM messages WHERE senderKey = :senderKey ORDER BY date DESC LIMIT 1")
     suspend fun threadForSender(senderKey: String): Long?
@@ -168,8 +143,8 @@ interface ClassificationDao {
     @Query("SELECT * FROM classifications WHERE messageId IN (:ids)")
     suspend fun getAll(ids: List<Long>): List<ClassificationEntity>
 
-    @Query("SELECT messageId FROM classifications WHERE state = 0 ORDER BY messageId DESC LIMIT :limit")
-    suspend fun pendingIds(limit: Int): List<Long>
+    @Query("SELECT messageId FROM classifications WHERE state = 0 ORDER BY messageId DESC")
+    suspend fun pendingIds(): List<Long>
 
     @Query("SELECT COUNT(*) FROM classifications WHERE state = 0")
     suspend fun pendingCount(): Int
@@ -250,10 +225,10 @@ interface FeedbackDao {
 
     @Query(
         "SELECT (createdAt / 604800000) AS week, COUNT(*) AS count FROM feedback_events " +
-            "WHERE createdAt >= :since AND ((label = 1 AND COALESCE(engineLabelAtMark, 0) != 2) OR " +
-            "(label = 0 AND engineLabelAtMark = 2)) GROUP BY week",
+            "WHERE (label = 1 AND COALESCE(engineLabelAtMark, 0) != 2) OR " +
+            "(label = 0 AND engineLabelAtMark = 2) GROUP BY week",
     )
-    suspend fun correctionsPerWeek(since: Long): List<WeekCount>
+    suspend fun correctionsPerWeek(): List<WeekCount>
 }
 
 @Dao

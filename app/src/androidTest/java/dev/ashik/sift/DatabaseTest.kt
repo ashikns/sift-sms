@@ -91,7 +91,7 @@ class DatabaseTest {
     fun threadQueryJoinsVerdictsNewestFirst() = runBlocking {
         db.messages().upsertAll(listOf(msg(1, 10, MsgType.INBOX, 1000), msg(2, 10, MsgType.SENT, 2000), msg(3, 10, MsgType.INBOX, 3000)))
         db.classifications().upsert(ClassificationEntity(3, ClassState.DONE, modelScore = 0.97f, reason = "MODEL", effectiveLabel = LabelCode.SPAM))
-        val rows = db.messages().observeThread(10, 50).first()
+        val rows = db.messages().observeThread(10).first()
         assertEquals(listOf(3L, 2L, 1L), rows.map { it.id })
         assertEquals(LabelCode.SPAM, rows[0].effectiveLabel)
         assertEquals(0.97f, rows[0].modelScore!!, 1e-6f)

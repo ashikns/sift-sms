@@ -103,9 +103,8 @@ data class WeightsConfig(
     val ham: Double,
     @SerialName("cluster_cap") val clusterCap: Double,
     @SerialName("cluster_cos") val clusterCos: Double,
-    @SerialName("max_examples") val maxExamples: Int,
 ) {
-    fun toWeighting() = Weighting(spam, ham, clusterCap, clusterCos, maxExamples)
+    fun toWeighting() = Weighting(spam, ham, clusterCap, clusterCos)
 }
 
 @Serializable

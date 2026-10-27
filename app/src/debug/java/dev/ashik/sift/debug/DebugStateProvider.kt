@@ -87,7 +87,6 @@ class DebugStateProvider : ContentProvider() {
                         graph.engine.awaitIdle()
                     }
                     "reconcile" -> graph.sync.fullReconcile()
-                    "incremental" -> graph.sync.incremental()
                     "seedHistory" -> out.putInt("seeded", seedHistory(arg?.toIntOrNull() ?: 800))
                     "seedStats" -> seedStats(out)
                     "rescan" -> graph.scheduler.enqueueBackfill(rescan = true)
@@ -119,7 +118,7 @@ class DebugStateProvider : ContentProvider() {
 
     /**
      * Replaces earlier seeds with [count] incoming messages from 100 to 400 days ago, each from its own sender, scam
-     * texts at even indices and ordinary ones at odd. They're imported like history, so only a rescan classifies them.
+     * texts at even indices and ordinary ones at odd. They're imported like history, and the backfill classifies them.
      */
     private suspend fun seedHistory(count: Int): Int {
         val resolver = context!!.contentResolver

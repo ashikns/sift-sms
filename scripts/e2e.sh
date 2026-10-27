@@ -126,8 +126,9 @@ idle
 RES=$(call markSpam "$(msg_field "$(num 4)" id)")
 [[ "$RES" == *"marked=true"* ]] || fail "markSpam result: $RES"
 folder_is "$(num 4)" 1 && pass "the marked message's conversation moved to Spam" || fail "marked folder=$(conv_field "$(num 4)" folder)"
-folder_is "$(num 5)" 1 && [[ "$(msg_field "$(num 5)" reason)" == "SIMILAR_TO_SPAM" ]] \
-  && pass "near-duplicate moved with SIMILAR_TO_SPAM" || fail "family B reason=$(msg_field "$(num 5)" reason)"
+# The near-duplicate moves with the re-check that follows the retrain.
+near_dup_moved() { folder_is "$(num 5)" 1 && [[ "$(msg_field "$(num 5)" reason)" == "SIMILAR_TO_SPAM" ]]; }
+wait_until 20 near_dup_moved && pass "near-duplicate moved with SIMILAR_TO_SPAM" || fail "family B reason=$(msg_field "$(num 5)" reason)"
 send_sms "$(num 6)" "$FAM_C"
 wait_until 15 folder_is "$(num 6)" 1 && pass "new variant from a new sender lands in Spam" || fail "family C folder=$(conv_field "$(num 6)" folder)"
 [[ "$(msg_field "$(num 6)" reason)" == "SIMILAR_TO_SPAM" ]] && pass "reason SIMILAR_TO_SPAM" || fail "family C reason=$(msg_field "$(num 6)" reason)"
@@ -164,12 +165,18 @@ wait_until 20 unmarked && pass "the deleted entry's message loses its mark and g
 $A shell input keyevent KEYCODE_BACK
 $A shell input keyevent KEYCODE_HOME
 
-step "Rescan all history"
-# History older than the automatic backfill's 90 days: only a rescan classifies it.
+step "Backfill and rescan of all history"
+# Old history is classified like any other: the backfill has no time window.
 seed_stat() { call seedStats | grep -oE "$1=[0-9]+" | cut -d= -f2; }
 SEEDED=$(call seedHistory 800 | grep -oE 'seeded=[0-9]+' | cut -d= -f2)
-[[ "${SEEDED:-0}" -eq 800 && "$(seed_stat classified)" -eq 0 ]] \
-  && pass "seeded 800 unclassified messages from 100-400 days ago" || fail "seedHistory=$SEEDED classified=$(seed_stat classified)"
+[[ "${SEEDED:-0}" -eq 800 ]] && pass "seeded 800 messages from 100-400 days ago" || fail "seedHistory=$SEEDED"
+all_seeds_classified() { [[ "$(seed_stat classified)" -eq 800 ]]; }
+wait_until 180 all_seeds_classified && pass "the backfill classified all 800 old messages" || fail "backfill classified $(seed_stat classified) of 800"
+SCAMS=$(seed_stat scams)
+FLAGGED=$(seed_stat scamsFlagged)
+WRONG=$(seed_stat ordinaryFlagged)
+(( FLAGGED * 10 >= SCAMS * 9 )) && pass "old scams in Spam ($FLAGGED of $SCAMS)" || fail "old scams in Spam: $FLAGGED of $SCAMS"
+(( WRONG * 10 <= 800 - SCAMS )) && pass "old ordinary texts mostly stay out of Spam ($WRONG flagged)" || fail "ordinary texts in Spam: $WRONG"
 scan_dump() { $A shell dumpsys notification --noredact 2>/dev/null | tr -d '\r' | grep -A40 "pkg=$PKG"; }
 scan_progress() { local d; d=$(scan_dump); [[ "$d" == *"Rescanning messages"* && "$d" == *android.progressMax* ]]; }
 no_scan_progress() { ! scan_progress; }
@@ -184,19 +191,13 @@ call rescan >/dev/null
 wait_until 15 scan_progress && pass "progress notification while rescanning" || fail "no rescan progress notification"
 scan_foreground && pass "rescan runs as a foreground service" || fail "rescan isn't running in the foreground"
 wait_until 180 scan_done && pass "summary notification when done" || fail "no rescan summary notification"
-notified "moved to Spam" && pass "summary counts conversations moved to Spam" \
-  || fail "summary: $(scan_dump | grep -m1 -oE 'android.bigText=[^)]*')"
+CHECKED=$(scan_dump | grep -m1 -oE 'Checked [0-9,]+ messages' | grep -oE '[0-9,]+' | tr -d ,)
+(( ${CHECKED:-0} >= 800 )) && pass "the rescan checked every message ($CHECKED)" || fail "summary: checked ${CHECKED:-?}"
 wait_until 10 no_scan_progress && pass "progress notification removed" || fail "progress notification left behind"
-[[ "$(seed_stat classified)" -eq 800 ]] && pass "rescan classified all 800 old messages" || fail "classified $(seed_stat classified) of 800"
-SCAMS=$(seed_stat scams)
-FLAGGED=$(seed_stat scamsFlagged)
-WRONG=$(seed_stat ordinaryFlagged)
-(( FLAGGED * 10 >= SCAMS * 9 )) && pass "old scams now in Spam ($FLAGGED of $SCAMS)" || fail "old scams in Spam: $FLAGGED of $SCAMS"
-(( WRONG * 10 <= 800 - SCAMS )) && pass "old ordinary texts mostly stay out of Spam ($WRONG flagged)" || fail "ordinary texts in Spam: $WRONG"
 $A shell input keyevent KEYCODE_HOME
 
 step "Re-check after a retrain"
-# Messages this old are only re-scored by the re-check that follows every retrain. Marking one old seeded parcel scam
+# The re-check that follows every retrain covers all of history, however old. Marking one old seeded parcel scam
 # "not spam" makes its copies from other senders near-duplicates of a not-spam message.
 rechecks() { local d; d=$($A logcat -d -s WM-WorkerWrapper:I 2>/dev/null); echo "$d" | grep -F RecheckWorker | grep -cF SUCCESS; }
 recheck_progress() { local d; d=$(scan_dump); [[ "$d" == *"Re-checking messages"* ]]; }

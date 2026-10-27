@@ -90,7 +90,7 @@ class EngineTest {
              "thresholds":{"full":{"conservative":0.97,"balanced":0.9,"aggressive":0.7,"warn":0.5},
                            "fallback":{"conservative":0.97,"balanced":0.9,"aggressive":0.7,"warn":0.5}},
              "personalization":{"priors":{"embed":1.0,"meta":4.0,"hash":0.5,"snd":0.1},
-                "weights":{"spam":1.0,"ham":1.0,"cluster_cap":2.0,"cluster_cos":0.8,"max_examples":5000},
+                "weights":{"spam":1.0,"ham":1.0,"cluster_cap":2.0,"cluster_cos":0.8},
                 "debounce_ms":10},
              "knn":{"tau_spam":0.8,"tau_ham":$tauHam}}
             """.trimIndent(),

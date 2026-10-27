@@ -54,5 +54,5 @@ personalization:
   # 75%, ~1.6 pt drift risk). The sender × content weights (snd) learn from marks too; they only move for the marked
   # message's own sender, so s08 also tries weaker priors for them.
   priors: {hash: 4.0, snd: 0.5}
-  weights: {spam: 1.0, ham: 1.0, cluster_cap: 2.0, cluster_cos: 0.8, max_examples: 5000}
+  weights: {spam: 1.0, ham: 1.0, cluster_cap: 2.0, cluster_cos: 0.8}
   debounce_ms: 3000

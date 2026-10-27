@@ -99,22 +99,6 @@ class SmsProviderGateway(context: Context) {
             out
         }.orEmpty()
 
-    fun keysAfter(afterId: Long): List<ProviderSms> =
-        resolver.query(Sms.CONTENT_URI, KEYS, "$NOT_DRAFT AND ${Sms._ID} > ?", arrayOf(afterId.toString()), "${Sms._ID} ASC")
-            ?.use { c ->
-                val out = ArrayList<ProviderSms>(c.count)
-                while (c.moveToNext()) out += read(c, withBody = false)
-                out
-            }.orEmpty()
-
-    fun keysSince(sinceDate: Long): List<ProviderSms> =
-        resolver.query(Sms.CONTENT_URI, KEYS, "$NOT_DRAFT AND ${Sms.DATE} >= ?", arrayOf(sinceDate.toString()), "${Sms._ID} ASC")
-            ?.use { c ->
-                val out = ArrayList<ProviderSms>(c.count)
-                while (c.moveToNext()) out += read(c, withBody = false)
-                out
-            }.orEmpty()
-
     /** Full rows (with bodies) for [ids], fetched in chunks. */
     fun rows(ids: List<Long>): List<ProviderSms> = ids.chunked(500).flatMap { chunk ->
         val placeholders = chunk.joinToString(",") { "?" }

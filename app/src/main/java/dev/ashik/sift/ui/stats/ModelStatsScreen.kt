@@ -52,9 +52,8 @@ class ModelStatsViewModel(graph: AppGraph) : ViewModel() {
 
     init {
         viewModelScope.launch {
-            val since = System.currentTimeMillis() - 8 * WEEK_MS
-            val corrections = graph.db.feedback().correctionsPerWeek(since).associate { it.week to it.count }
-            val incoming = graph.db.messages().incomingPerWeek(since).associate { it.week to it.count }
+            val corrections = graph.db.feedback().correctionsPerWeek().associate { it.week to it.count }
+            val incoming = graph.db.messages().incomingPerWeek().associate { it.week to it.count }
             weeks.value = (corrections.keys + incoming.keys).distinct().sortedDescending().map { w ->
                 WeekStat(w * WEEK_MS, corrections[w] ?: 0, incoming[w] ?: 0)
             }
@@ -117,7 +116,7 @@ fun ModelStatsScreen(onBack: () -> Unit) {
                     Text(
                         stringResource(
                             R.string.stats_week,
-                            DateUtils.formatDateTime(LocalContext.current, w.weekStart, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_NO_YEAR),
+                            DateUtils.formatDateTime(LocalContext.current, w.weekStart, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR or DateUtils.FORMAT_ABBREV_MONTH),
                             w.corrections, w.incoming, share,
                         ),
                     )

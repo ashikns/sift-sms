@@ -32,14 +32,15 @@ plain text, never clickable; long-press a message to select and copy all or part
 5. **Learn.** After installation, your marks are the only thing Sift learns from: no reading habits, no other rules.
    A mark applies to that one message. Each mark is stored on the phone as a training example (the text, its
    features and your label), so learning survives deleting the message.
-   - Near-duplicates of the marked message follow your label immediately.
+   - Near-duplicates of the marked message follow your label: new ones as soon as they arrive, existing ones with
+     the re-check below.
    - A few seconds later the model retrains on all your marks, anchored to the base model: lightly for word and
      character n-grams, strongly for each marked message's sender paired with its words and link domains. A sender
      only ever counts together with a message's wording, so "Not spam" on a bank's card alerts clears that bank's
      other card alerts (under any route prefix: `AX-ICICIT-S` and `JD-ICICIT-T` are one sender), not its upsells or
      another sender's similar text.
    - Then the open conversation is re-checked with the new model first ("Re-checking now…" shows until it's done),
-     then every other message, old ones included; the progress shows in the notification shade.
+     then every other message, however old; the progress shows in the notification shade.
    - Deleting an entry under Settings → Learning entries removes that mark: Sift forgets it, retrains, and judges the
      message again on its own.
    - The embedding weights, message-feature weights and sender-type signals stay fixed. That way a mark on one

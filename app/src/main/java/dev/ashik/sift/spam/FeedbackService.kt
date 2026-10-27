@@ -19,7 +19,6 @@ import dev.ashik.sift.spamcore.SpamEngine
 import dev.ashik.sift.spamcore.TrainingExample
 import dev.ashik.sift.spamcore.UserLabel
 import dev.ashik.sift.spamcore.Verdict
-import dev.ashik.sift.spamcore.features.Features
 import dev.ashik.sift.telephony.AddressNormalizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -28,7 +27,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Re-scores recent unlabeled messages after the model or the user's labels change.
+ * Re-scores unlabeled messages after the model or the user's labels change.
  * User-driven verdicts (near-duplicates of a marked message) move messages; model-only flips never move an inbox
  * message to Spam retroactively (it only gets a "Possible spam" badge), but do rescue Spam-folder false positives.
  */
@@ -45,20 +44,9 @@ class RescoreService(
     val lock = Mutex()
 
     /**
-     * Right after an explicit mark: re-scores the recent window and the sender's other messages (every route of a DLT
-     * sender: `AX-ICICIT-S` and `JD-ICICIT-T` are one sender) by content, so near-duplicates of the marked message move
-     * with it.
+     * After a retrain: re-scores these messages (the marked messages' threads first, then RecheckWorker goes through the
+     * rest of history in chunks). Near-duplicates of a marked message move with it here.
      */
-    suspend fun afterFeedback(marked: List<MessageEntity>) {
-        val markedIds = marked.map { it.id }.toSet()
-        val sids = marked.mapNotNull { Features.senderId(it.senderKey) }.toSet()
-        val senderKeys = db.messages().incomingSenderKeys().filter { Features.senderId(it) in sids }
-        val sameSender = db.messages().unlabeledIncomingFrom(senderKeys, 200)
-        val recent = db.messages().recentUnlabeledIncoming(System.currentTimeMillis() - WINDOW_MS, 200)
-        rescore((sameSender + recent).distinctBy { it.id }.filter { it.id !in markedIds })
-    }
-
-    /** After a retrain: re-scores these messages (the marked messages' threads first, then RecheckWorker goes through the rest of history in chunks). */
     suspend fun afterRetrain(messageIds: List<Long>) = rescore(db.messages().getAll(messageIds))
 
     /**
@@ -103,7 +91,6 @@ class RescoreService(
     }
 
     companion object {
-        const val WINDOW_MS = 30L * 24 * 60 * 60 * 1000
         const val HYSTERESIS = 0.05f
 
         /**
@@ -168,7 +155,6 @@ class FeedbackService(
         } }
         engine.learn(messages.map { example(it, label, now) })
         if (label == UserLabel.SPAM) threads.forEach(notifier::cancelThread)
-        rescore.afterFeedback(messages)
         return recheckAfterRetrain(threads)
     }
 

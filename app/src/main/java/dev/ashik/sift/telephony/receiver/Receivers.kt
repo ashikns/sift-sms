@@ -67,7 +67,7 @@ class DefaultSmsChangedReceiver : BroadcastReceiver() {
 class ExternalProviderChangeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.ACTION_EXTERNAL_PROVIDER_CHANGE) return
-        runAsync(context, 8_000) { it.sync.incremental() }
+        runAsync(context, 8_000) { it.sync.fullReconcile() }
     }
 }
 

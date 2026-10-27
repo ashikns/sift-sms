@@ -123,25 +123,20 @@ class Weighting:
     ham: float = 1.0
     cluster_cap: float = 2.0
     cluster_cos: float = 0.8
-    max_examples: int = 5000
 
 
 def example_weights(examples: list[Example], w: Weighting) -> np.ndarray:
     """Base weight per example, then cap each near-duplicate cluster's total weight (scaled proportionally).
 
-    Examples are the user's marks, oldest-first; only the newest max_examples are kept. Clusters use leader
+    Examples are all of the user's marks, oldest-first. Clusters use leader
     clustering in list order: an example joins the first earlier cluster (same label) whose leader has sparse cosine
     ≥ cluster_cos with it, otherwise it starts a new cluster. Mirrored exactly by spamcore's ExampleWeighting.
     """
     n = len(examples)
     base = np.array([w.spam if e.label == 1 else w.ham for e in examples], dtype=np.float64)
-    keep = np.arange(n) >= n - w.max_examples
-    base[~keep] = 0.0
     leaders: list[int] = []
     cluster_of = np.full(n, -1, dtype=np.int64)
     for i in range(n):
-        if not keep[i]:
-            continue
         e = examples[i]
         for c, lead in enumerate(leaders):
             le = examples[lead]
@@ -153,11 +148,10 @@ def example_weights(examples: list[Example], w: Weighting) -> np.ndarray:
             leaders.append(i)
     totals = np.zeros(len(leaders), dtype=np.float64)
     for i in range(n):
-        if keep[i]:
-            totals[cluster_of[i]] += base[i]
+        totals[cluster_of[i]] += base[i]
     out = base.copy()
     for i in range(n):
-        if keep[i] and totals[cluster_of[i]] > w.cluster_cap:
+        if totals[cluster_of[i]] > w.cluster_cap:
             out[i] = base[i] * (w.cluster_cap / totals[cluster_of[i]])
     return out
 

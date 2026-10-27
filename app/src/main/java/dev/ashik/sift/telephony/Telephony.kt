@@ -31,7 +31,7 @@ class DefaultSmsRole(context: Context) {
 
 /**
  * Watches `content://sms` while the role is held and runs [onChange] debounced (300 ms, latest wins).
- * Our own writes also trigger it; the incremental sync it runs is cheap and idempotent.
+ * Our own writes also trigger it; the sync it runs (a diff of every row's keys) is idempotent.
  */
 class SmsProviderObserver(
     private val context: Context,

@@ -23,7 +23,10 @@ import dev.ashik.sift.spamcore.Reason
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
-/** Enqueues the app's background work (all unique; all but a rescan or re-check, which run in the foreground, stay well under 10 minutes). */
+/**
+ * Enqueues the app's background work (all unique). A rescan or re-check runs in the foreground; a backfill of a big
+ * history can outlast a job's 10 minutes and continues where it stopped.
+ */
 class WorkScheduler(private val context: Context) {
     private val wm get() = WorkManager.getInstance(context)
 
@@ -84,8 +87,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
 }
 
 /**
- * Classifies history that has no verdict yet (last 90 days, at most 5,000 messages, newest first), or rescans every
- * incoming message on request. A rescan shows its progress in a notification, runs as a foreground service when Android
+ * Classifies every incoming message that has no verdict yet, newest first, or rescans every incoming message on
+ * request. A rescan shows its progress in a notification, runs as a foreground service when Android
  * allows it (full speed, no job time limit), and picks up where it stopped if it's interrupted.
  */
 class BackfillClassifyWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -96,14 +99,22 @@ class BackfillClassifyWorker(context: Context, params: WorkerParameters) : Corou
     }
 
     private suspend fun backfill(graph: AppGraph): Result {
-        val ids = graph.db.messages().unclassifiedIncomingIds(System.currentTimeMillis() - WINDOW_MS, LIMIT)
+        val messages = graph.db.messages()
+        var remaining = messages.unclassifiedIncomingIds()
+        var total = remaining.size
         var done = 0
-        for (chunk in ids.chunked(32)) {
-            for (id in chunk) if (classify(graph, id)) done++
-            setProgress(workDataOf(KEY_DONE to done, KEY_TOTAL to ids.size))
-            if (isStopped) return Result.retry()
+        val skipped = HashSet<Long>()
+        while (remaining.isNotEmpty()) {
+            for (chunk in remaining.chunked(32)) {
+                for (id in chunk) if (classify(graph, id)) done++ else skipped += id
+                setProgress(workDataOf(KEY_DONE to done, KEY_TOTAL to total))
+                if (isStopped) return Result.retry()
+            }
+            // Messages imported meanwhile: their own backfill request was dropped because this work was running.
+            remaining = messages.unclassifiedIncomingIds().filterNot { it in skipped }
+            total += remaining.size
         }
-        return Result.success(workDataOf(KEY_DONE to done, KEY_TOTAL to ids.size))
+        return Result.success(workDataOf(KEY_DONE to done, KEY_TOTAL to total))
     }
 
     /**
@@ -181,8 +192,6 @@ class BackfillClassifyWorker(context: Context, params: WorkerParameters) : Corou
         const val KEY_STARTED = "started"
         const val KEY_DONE = "done"
         const val KEY_TOTAL = "total"
-        const val WINDOW_MS = 90L * 24 * 60 * 60 * 1000
-        const val LIMIT = 5000
         private const val NOTICE_INTERVAL_MS = 500L
         private const val TAG = "SiftRescan"
     }
@@ -242,30 +251,25 @@ class RecheckWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 }
 
 /**
- * Finishes real-time classifications that missed the receiver's deadline (or were interrupted by process death).
+ * Finishes every real-time classification that missed the receiver's deadline (or was interrupted by process death).
  * A late spam verdict moves the conversation and withdraws its notification; a late ham verdict notifies if the
- * message never did and is still fresh.
+ * message never did and is still unread.
  */
 class ClassifyPendingWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val graph = (applicationContext as SiftApp).graph
-        val ids = graph.db.classifications().pendingIds(200)
-        val now = System.currentTimeMillis()
+        val ids = graph.db.classifications().pendingIds()
         for (id in ids) {
             val message = graph.db.messages().get(id) ?: continue
             val computed = graph.coordinator.compute(message) ?: continue
             val applied = graph.coordinator.apply(computed)
             if (applied.effectiveLabel == LabelCode.SPAM) {
                 graph.notifier.cancelThread(message.threadId)
-            } else if (!applied.notified && !message.read && now - message.date < FRESH_MS) {
+            } else if (!applied.notified && !message.read) {
                 graph.notifier.notifyThread(message.threadId, alert = true)
             }
             graph.db.classifications().markNotified(id)
         }
         return Result.success()
-    }
-
-    private companion object {
-        const val FRESH_MS = 60L * 60 * 1000
     }
 }

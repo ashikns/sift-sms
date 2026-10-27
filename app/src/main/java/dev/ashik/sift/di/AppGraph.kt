@@ -64,7 +64,7 @@ class AppGraph(private val context: Context) {
     val incoming by lazy {
         IncomingSmsHandler(db, gateway, repository, coordinator, notifier, settings, visibleThread, scheduler, appScope)
     }
-    val observer by lazy { SmsProviderObserver(context, appScope) { sync.incremental() } }
+    val observer by lazy { SmsProviderObserver(context, appScope) { sync.fullReconcile() } }
 
     private val startupMutex = Mutex()
     private var startupDone = false
@@ -77,7 +77,7 @@ class AppGraph(private val context: Context) {
         if (!role.refresh()) return@withLock
         observer.register()
         if (startupDone) {
-            sync.incremental()
+            sync.fullReconcile()
             return@withLock
         }
         startupDone = true

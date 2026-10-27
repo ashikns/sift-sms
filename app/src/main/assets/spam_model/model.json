@@ -1,5 +1,5 @@
 {
-  "bundle_version": "2026.10.27-70210321",
+  "bundle_version": "2026.10.27-c1ca7544",
   "created_utc": "2026-10-27T21:00:35+00:00",
   "encoder": {
     "base_model": "sentence-transformers/all-MiniLM-L6-v2@1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
@@ -161,7 +161,6 @@
       "cluster_cap": 2.0,
       "cluster_cos": 0.8,
       "ham": 1.0,
-      "max_examples": 5000,
       "spam": 1.0
     }
   },

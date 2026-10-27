@@ -72,7 +72,6 @@ class TrainingTest {
         Weighting(
             spam = it["spam"]!!.jsonPrimitive.double, ham = it["ham"]!!.jsonPrimitive.double,
             clusterCap = it["cluster_cap"]!!.jsonPrimitive.double, clusterCos = it["cluster_cos"]!!.jsonPrimitive.double,
-            maxExamples = it["max_examples"]!!.jsonPrimitive.int,
         )
     }
 
