@@ -1,0 +1,188 @@
+@file:Suppress("ArrayInDataClass")
+
+package dev.ashik.sift.data.db
+
+import androidx.room3.Embedded
+import androidx.room3.Entity
+import androidx.room3.Index
+import androidx.room3.PrimaryKey
+
+/**
+ * Mirror of one row of the system SMS provider. `id` is the provider `_id`; because the provider reuses ids,
+ * [fingerprint] (address + date) detects a reused id pointing at a different message.
+ */
+@Entity(
+    tableName = "messages",
+    indices = [Index(value = ["threadId", "date"]), Index(value = ["senderKey"]), Index(value = ["type", "date"])],
+)
+data class MessageEntity(
+    @PrimaryKey val id: Long,
+    val threadId: Long,
+    val address: String,
+    val senderKey: String,
+    val senderKind: String,
+    val body: String,
+    val date: Long,
+    val dateSent: Long,
+    val type: Int,
+    val status: Int,
+    val read: Boolean,
+    val seen: Boolean,
+    val subId: Int,
+    val errorCode: Int,
+    val fingerprint: Long,
+    val mutableHash: Int,
+    /** Set when the row disappeared from the provider but is too young to delete (OTP protection can hide rows). */
+    val missingSince: Long? = null,
+)
+
+/** The spam verdict and user label for one incoming message. */
+@Entity(tableName = "classifications")
+data class ClassificationEntity(
+    @PrimaryKey val messageId: Long,
+    val state: Int = ClassState.PENDING,
+    val modelLabel: Int? = null,
+    val modelScore: Float? = null,
+    val reason: String? = null,
+    /** JSON array of {"text","weight"} cues. */
+    val cues: String? = null,
+    val similarMessageId: Long? = null,
+    val modelVersion: Int? = null,
+    val userLabel: Int? = null,
+    val userLabeledAt: Long? = null,
+    val effectiveLabel: Int = LabelCode.HAM,
+    val effectiveSource: String = Source.PENDING,
+    /** True once a notification was posted, or when the message must never notify (imported history). */
+    val notified: Boolean = false,
+    val classifiedAt: Long? = null,
+)
+
+/** One row per thread, rebuilt by the projector whenever the thread's messages or verdicts change. */
+@Entity(tableName = "conversations", indices = [Index(value = ["folder", "latestDate"])])
+data class ConversationEntity(
+    @PrimaryKey val threadId: Long,
+    val senderKey: String,
+    val address: String,
+    val latestMessageId: Long,
+    val latestDate: Long,
+    val snippet: String,
+    val latestType: Int,
+    val latestIncomingId: Long?,
+    val unreadCount: Int,
+    val messageCount: Int,
+    val folder: Int,
+    /** Effective label of the latest incoming message (drives the "Possible spam" badge). */
+    val latestLabel: Int,
+    val canReply: Boolean,
+)
+
+@Entity(tableName = "contacts_cache")
+data class ContactCacheEntity(
+    @PrimaryKey val senderKey: String,
+    val displayName: String?,
+    val photoUri: String?,
+    val isContact: Boolean,
+    val refreshedAt: Long,
+)
+
+/** Per-part progress of an outgoing message (bitmasks over part indices). */
+@Entity(tableName = "pending_sends")
+data class PendingSendEntity(
+    @PrimaryKey val messageId: Long,
+    val partsTotal: Int,
+    val sentMask: Long = 0,
+    val failedMask: Long = 0,
+    val deliveredMask: Long = 0,
+    val deliveryFailedMask: Long = 0,
+    val lastError: Int = 0,
+    val deliveryReports: Boolean,
+    val createdAt: Long,
+)
+
+@Entity(tableName = "feedback_events", indices = [Index(value = ["batchId"]), Index(value = ["createdAt"])])
+data class FeedbackEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val batchId: Long,
+    val kind: Int,
+    val messageId: Long,
+    val senderKey: String,
+    /** The new label (user label code for EXPLICIT, effective label code for AUTO_MOVE). */
+    val label: Int,
+    val prevUserLabel: Int?,
+    val prevEffectiveLabel: Int,
+    val prevEffectiveSource: String,
+    /** What the engine said before the mark: a disagreement counts as a correction in stats. */
+    val engineLabelAtMark: Int?,
+    val createdAt: Long,
+    val undone: Boolean = false,
+)
+
+/** A labeled message the spam engine learns from (spamcore's ExampleStore). */
+@Entity(tableName = "training_examples")
+data class TrainingExampleEntity(
+    @PrimaryKey val messageId: Long,
+    val body: String,
+    val senderKey: String,
+    val senderKind: String,
+    val international: Boolean,
+    val firstContact: Boolean,
+    val label: Int,
+    val createdAt: Long,
+    /** float32 little-endian, or null if no embedding was available. */
+    val embedding: ByteArray?,
+)
+
+/** Cached encoder output per message, so re-scoring after learning skips the encoder. */
+@Entity(tableName = "message_embeddings")
+data class MessageEmbeddingEntity(
+    @PrimaryKey val messageId: Long,
+    val fingerprint: Long,
+    val bundleVersion: String,
+    val vector: ByteArray,
+    val createdAt: Long,
+)
+
+// ---- Query projections -------------------------------------------------------------------------------------------
+
+data class ConversationRow(
+    @Embedded val conversation: ConversationEntity,
+    val displayName: String?,
+    val photoUri: String?,
+)
+
+data class ThreadMessageRow(
+    val id: Long,
+    val threadId: Long,
+    val address: String,
+    val senderKey: String,
+    val senderKind: String,
+    val body: String,
+    val date: Long,
+    val dateSent: Long,
+    val type: Int,
+    val status: Int,
+    val errorCode: Int,
+    val read: Boolean,
+    val effectiveLabel: Int,
+    val effectiveSource: String?,
+    val modelScore: Float?,
+    val reason: String?,
+    val cues: String?,
+    val similarMessageId: Long?,
+    val userLabel: Int?,
+    val classState: Int?,
+    val modelVersion: Int?,
+)
+
+data class MessageKey(
+    val id: Long,
+    val fingerprint: Long,
+    val mutableHash: Int,
+    val date: Long,
+    val threadId: Long,
+    val missingSince: Long?,
+)
+
+data class FolderCount(val folder: Int, val conversations: Int, val unread: Int)
+
+data class WeekCount(val week: Long, val count: Int)

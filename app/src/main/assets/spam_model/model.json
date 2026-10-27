@@ -1,0 +1,175 @@
+{
+  "bundle_version": "2026.10.27-baeb3af3",
+  "created_utc": "2026-10-27T12:18:03+00:00",
+  "encoder": {
+    "base_model": "sentence-transformers/all-MiniLM-L6-v2@1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "dim": 384,
+    "file": "encoder.int8.ort",
+    "inputs": [
+      "input_ids",
+      "attention_mask"
+    ],
+    "max_len": 128,
+    "ort_version": "1.27.0",
+    "output": "embedding",
+    "quant": "dynamic-qint8-per-channel",
+    "sha256": "0e9b81c228dd96eab1551b9276a5d955c98341864e9e80c979168d33f8489e25"
+  },
+  "features": {
+    "hash_bits": 18,
+    "hash_seed": 1397771569,
+    "meta_names": [
+      "len_log",
+      "url_count",
+      "url_shortener",
+      "url_ip_host",
+      "url_risky_tld",
+      "url_punycode_or_at",
+      "url_brand_lookalike",
+      "phone_number",
+      "email_address",
+      "currency_amount",
+      "optout_stop",
+      "otp_pattern",
+      "upper_ratio",
+      "digit_ratio",
+      "excl_count",
+      "emoji_count",
+      "invisible",
+      "lookalike",
+      "dropped_ratio",
+      "non_gsm7",
+      "url_official",
+      "snd_short_code",
+      "snd_long_code_nanp",
+      "snd_alphanumeric",
+      "snd_email",
+      "snd_international",
+      "snd_first_contact"
+    ],
+    "version": "feat_v1"
+  },
+  "head": {
+    "file": "head_base.bin",
+    "sha256": "a5daf00dc2e34e300b33efa98b0757f1ceb240095f2b0038e6836db98b9ed677"
+  },
+  "knn": {
+    "tau_ham": 0.9,
+    "tau_spam": 0.8
+  },
+  "metrics": {
+    "future": {
+      "n": 216,
+      "recall": 0.9490740740740741
+    },
+    "gates": {
+      "future_recall": true,
+      "int8": true,
+      "learning_drift": true,
+      "learning_no_harm": true,
+      "learning_repeats": true,
+      "modern_fpr": false,
+      "modern_otp": true,
+      "modern_recall": true,
+      "robust_encoding": true,
+      "robust_visible": true,
+      "test_fpr": false,
+      "test_pr_auc": true,
+      "test_recall": true
+    },
+    "int8": {
+      "cosine_mean": 0.9920133893191815,
+      "cosine_min": 0.9809659719467163,
+      "pr_auc_int8_minus_fp32": -6.373574757079226e-06
+    },
+    "learning": {
+      "diligent_cost_ratio": 0.9456264775413712,
+      "diligent_repeat_campaign_error_ratio": 0.6437193231877211,
+      "flagged_legit_variants_kept": 0.75,
+      "flagged_legit_variants_kept_base": 0.125,
+      "missed_scam_variants_caught": 0.6546762589928058,
+      "missed_scam_variants_caught_base": 0.10071942446043165,
+      "noisy_cost_ratio": 0.9739952718676123,
+      "params": {
+        "embed": 1000000.0,
+        "ham": 1.0,
+        "hash": 4.0,
+        "meta": 1000000.0,
+        "tau_spam": 0.8
+      },
+      "spam_only_cost_ratio": 0.9810874704491725,
+      "spam_only_probe_fpr_delta": 0.015625
+    },
+    "test": {
+      "aggressive": {
+        "fpr": 0.01962809917355372,
+        "recall": 0.9623762376237623
+      },
+      "balanced": {
+        "fpr": 0.013429752066115703,
+        "fpr_upper95": 0.024924717141102976,
+        "recall": 0.9544554455445544
+      },
+      "conservative": {
+        "fpr": 0.0010330578512396695,
+        "recall": 0.9196605374823197
+      },
+      "n_ham": 968,
+      "n_spam": 3535,
+      "pr_auc": 0.999226587583207,
+      "recall_by_source": {
+        "imc25": 0.9474342928660826,
+        "mishra": 0.9019607843137255,
+        "ncsu": 0.9889336016096579,
+        "uci": 0.7956989247311828
+      }
+    }
+  },
+  "normalizer": {
+    "resources": {
+      "brands_v1.tsv": "6725dbcec89eaa933fc0df88b42ecdfc1a2d3a97b67e14ec4bb9882c4f80f6bf",
+      "confusables_v1.tsv": "d166ac9fb7aaec96a2d1613663bc6e54dafcb41c76d65ed8ec0a51eba61f5c76",
+      "gsm7_v1.txt": "a90395c070592b3bff9c8b45dd0f4be5d7ab2db9e32ad486deb60c194c6799ac",
+      "psl_lite_v1.txt": "7ec002e6b8ba582629860095c46b2deed0d3f773f5a325658aa0ace4f77ba757",
+      "risky_tlds_v1.txt": "6b109f88e3e1cb91bf4778da575e253e314b306c69cae2768ff2643f0ddd46da",
+      "shorteners_v1.txt": "b92457a1d056ff653df662b86076d72262ab72c05ff86ae1034deffb5abb36af",
+      "tld_stoplist_v1.txt": "0a80d24cfa28d8ea8734e86e4e8e537e052b6bfbafd5f3811db330cf19ad7622",
+      "tlds_v1.txt": "eea9cacb2fd1d2663ec97906b92f812a42e23e02d3aff86ed9e33ca58bdb5bc0"
+    },
+    "version": "norm_v1"
+  },
+  "personalization": {
+    "debounce_ms": 3000,
+    "priors": {
+      "embed": 1000000.0,
+      "hash": 4.0,
+      "meta": 1000000.0
+    },
+    "weights": {
+      "cluster_cap": 2.0,
+      "cluster_cos": 0.8,
+      "ham": 1.0,
+      "max_examples": 5000,
+      "spam": 1.0
+    }
+  },
+  "schema": 1,
+  "thresholds": {
+    "fallback": {
+      "aggressive": 0.7370137175407886,
+      "balanced": 0.9145827299211522,
+      "conservative": 0.9333778195306965,
+      "warn": 0.6129658716616578
+    },
+    "full": {
+      "aggressive": 0.3777904273114669,
+      "balanced": 0.5466336391937422,
+      "conservative": 0.881335517695954,
+      "warn": 0.2255848794259779
+    }
+  },
+  "tokenizer": {
+    "file": "vocab.txt",
+    "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+  }
+}

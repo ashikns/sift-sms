@@ -1,0 +1,24 @@
+# Gradle / Android
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Python / ML pipeline
+ml/.venv/
+ml/data/
+ml/runs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+
+# Local-only artifacts
+scripts/out/
+*.apk
+!app/src/main/assets/**

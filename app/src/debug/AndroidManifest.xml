@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug builds only: state queries and actions for scripts/e2e.sh. DUMP is held by adb shell, not by apps. -->
+        <provider
+            android:name=".debug.DebugStateProvider"
+            android:authorities="dev.ashik.sift.debug"
+            android:exported="true"
+            android:readPermission="android.permission.DUMP"
+            android:writePermission="android.permission.DUMP" />
+    </application>
+</manifest>

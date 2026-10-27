@@ -1,0 +1,21 @@
+# Data-side settings for s00_fetch / sources loaders. Training hyperparameters live in pipeline.yaml.
+seed: 20261027
+
+templates:
+  file: templates/ham_v1.yaml
+  # Target total number of generated messages; each template gets a share proportional to its weight.
+  target_total: 3400
+  # Never emit more than this many distinct expansions of one template.
+  max_per_template: 40
+
+imc25:
+  # Seed for deterministic PII refill (names, phone numbers, URLs).
+  refill_seed: 4242
+  # Minimum share of ASCII letters among letters, and minimum English stopword hits, for the language heuristic
+  # (only used for rows whose language field is missing).
+  min_ascii_letter_ratio: 0.9
+  min_stopword_hits: 1
+
+ncsu:
+  # Drop messages whose text (after whitespace collapse) is shorter than this.
+  min_chars: 8

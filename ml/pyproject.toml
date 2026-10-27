@@ -1,0 +1,38 @@
+[project]
+name = "smsml"
+version = "0.1.0"
+description = "Training and export pipeline for Sift's on-device SMS spam model"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch==2.14.*",
+    "transformers>=5.20,<6",
+    "tokenizers",
+    "huggingface_hub",
+    "onnx==1.21.*",
+    # Must match the Android AAR and desktop JVM jar exactly (numeric parity of the int8 encoder).
+    "onnxruntime==1.27.0",
+    "mmh3==5.3.*",
+    "datasketch>=1.6",
+    "scikit-learn>=1.7",
+    "scipy",
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "pyyaml",
+    "requests",
+    "tqdm",
+]
+
+[dependency-groups]
+dev = ["pytest", "hypothesis"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/smsml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

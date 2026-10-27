@@ -1,0 +1,68 @@
+package dev.ashik.sift.ui
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation3.runtime.NavKey
+import dev.ashik.sift.SiftApp
+import dev.ashik.sift.ui.navigation.NewConversationKey
+import dev.ashik.sift.ui.navigation.ThreadKey
+import dev.ashik.sift.ui.theme.SiftTheme
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    /** A destination requested by the launching intent (notification, share, sms: link), consumed by the UI. */
+    private val pendingDestination = MutableStateFlow<NavKey?>(null)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        if (savedInstanceState == null) pendingDestination.value = destinationFor(intent)
+        setContent {
+            SiftTheme {
+                SiftRoot(pendingDestination = pendingDestination, onDestinationConsumed = { pendingDestination.value = null })
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingDestination.value = destinationFor(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val graph = (application as SiftApp).graph
+        lifecycleScope.launch { graph.onUiStart() }
+    }
+
+    private fun destinationFor(intent: Intent?): NavKey? {
+        intent ?: return null
+        val data = intent.data
+        return when {
+            data?.scheme == "sift" && data.host == "thread" ->
+                data.lastPathSegment?.toLongOrNull()?.let { ThreadKey(it) }
+            (intent.action == Intent.ACTION_SENDTO || intent.action == Intent.ACTION_VIEW) &&
+                data?.scheme in setOf("sms", "smsto", "mms", "mmsto") -> {
+                val address = data?.schemeSpecificPart?.substringBefore('?')?.split(',', ';')?.firstOrNull()?.trim()
+                val body = intent.getStringExtra("sms_body") ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+                if (address.isNullOrEmpty()) NewConversationKey(body) else ThreadKey(0, address, body)
+            }
+            intent.action == Intent.ACTION_SEND && intent.type == "text/plain" ->
+                NewConversationKey(intent.getStringExtra(Intent.EXTRA_TEXT))
+            else -> null
+        }
+    }
+
+    companion object {
+        fun threadIntent(context: Context, threadId: Long): Intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("sift://thread/$threadId"), context, MainActivity::class.java)
+    }
+}

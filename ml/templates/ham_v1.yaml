@@ -1,0 +1,418 @@
+# Hand-written templates for modern (2024–2026, US-centric) legitimate SMS ("ham").
+#
+# Public SMS corpora are old (2012) or contain only spam, so modern legitimate traffic that *looks* like spam
+# (OTP codes, carrier notices, bank alerts, opted-in promos, first-contact texts) is the scarcest data. These
+# templates are expanded by smsml.sources.templates into training-only messages; splits are made by template id
+# so no template appears in more than one split.
+#
+# Placeholders inside {braces}:
+#   {slot}            a value from `slots` below (or from the template's own `slots` override)
+#   {a|b|c}           an inline choice
+#   {generator}       one of: d4 d5 d6 d8 code6_dash amount amount_big amount_round time date_md date_long
+#                     weekday last4 order order_amz track_ups track_usps track_fedex flightno gate plate
+#                     minutes zip pct phone tollfree
+#   {n:A-B}           an integer in [A, B]
+#   {name@var}        draw once per message and reuse for every @var reference (e.g. a WebOTP code shown twice)
+# `weight` scales how many distinct expansions a template gets (default 1).
+#
+# All people, phone numbers (555-01xx), addresses and order numbers are fictional; domains are the real
+# official domains of the named businesses.
+
+version: 1
+
+slots:
+  first_name: [Sam, Maria, Jordan, Priya, Alex, Chris, Taylor, Jamie, Morgan, Emily, Michael, Sarah, David, Jessica,
+    Daniel, Ashley, Kevin, Lauren, Brian, Megan, Jose, Ana, Luis, Carmen, Wei, Mei, Hiro, Aisha, Omar, Fatima,
+    Tyrone, Keisha, Dwayne, Jasmine, Connor, Molly, Liam, Olivia, Noah, Emma, Ethan, Ava, Mason, Sophia, Lucas, Mia,
+    Ravi, Anjali, Kim, Grace, Ben, Hannah, Tom, Rachel, Nick, Katie, Matt, Nicole, Greg, Linda]
+  family: [Mom, Dad, Grandma, Grandpa, Aunt Linda, Uncle Rob, sis, bro]
+  city: [Austin, Denver, Seattle, Chicago, Phoenix, Atlanta, Boston, Portland, Nashville, San Diego, Columbus,
+    Charlotte, Minneapolis, Tampa, Raleigh, Salt Lake City, Kansas City, Pittsburgh, Sacramento, Orlando]
+  state_city: ["AUSTIN, TX 78704", "DENVER, CO 80205", "SEATTLE, WA 98103", "CHICAGO, IL 60614",
+    "PHOENIX, AZ 85016", "ATLANTA, GA 30307", "BOSTON, MA 02130", "PORTLAND, OR 97214", "NASHVILLE, TN 37206",
+    "COLUMBUS, OH 43215", "CHARLOTTE, NC 28203", "TAMPA, FL 33606"]
+  street: [Main St, Oak Ave, Maple Dr, Cedar Ln, Elm St, Pine Rd, Lakeview Blvd, Congress Ave, 5th St, Broadway,
+    Park Ave, Riverside Dr, Washington St, Lincoln Ave, Sunset Blvd]
+  place: [the park, Starbucks, Target, the library, the gym, Trader Joe's, Costco, the airport, the office,
+    Chipotle, the soccer field, school pickup, the mall, Whole Foods, the dog park, church, the pharmacy]
+  restaurant: [Chipotle, Panera Bread, Chick-fil-A, Taco Bell, Shake Shack, Sweetgreen, Panda Express,
+    Olive Garden, Five Guys, Noodles & Company, Jersey Mike's, Raising Cane's, Wingstop, Domino's]
+  food: [pizza, tacos, sushi, Thai, burgers, pho, BBQ, Chinese, Indian, wings, ramen, salad]
+  merchant: [STARBUCKS, TARGET, AMAZON MKTPLACE, SHELL OIL, WHOLE FOODS, COSTCO WHSE, UBER TRIP, NETFLIX.COM,
+    HEB, KROGER, WALGREENS, CHEVRON, APPLE.COM/BILL, SPOTIFY, DOORDASH, HOME DEPOT, LOWES, CVS/PHARMACY]
+  product: [Kindle Paperwhite, AirPods Pro, phone case, coffee maker, running shoes, vitamins, printer ink,
+    dog food, LEGO set, water bottle, desk lamp, HDMI cable, yoga mat, air fryer, book]
+  doctor: [Dr. Patel, Dr. Nguyen, Dr. Garcia, Dr. Kim, Dr. Johnson, Dr. Rossi, Dr. Okafor, Dr. Chen]
+  pet: [Biscuit, Luna, Max, Bella, Charlie, Daisy, Milo, Coco, Rocky, Penny]
+  school: [Lincoln Elementary, Westlake High, Oak Ridge Middle, Roosevelt Elementary, Jefferson High,
+    Eastside Middle School, Maple Grove Elementary]
+  sport: [soccer, basketball, baseball, volleyball, swim, softball, hockey, lacrosse, track]
+  team_thing: [practice, the game, the tournament, team photos, the bake sale, carpool]
+  airline: [United, Delta, American Airlines, Southwest, Alaska Airlines, JetBlue]
+  airport: [DEN, ORD, SEA, ATL, AUS, PHX, BOS, LAX, SFO, DFW, JFK, MSP, CLT]
+  car: [white Toyota Camry, gray Honda Civic, black Tesla Model 3, blue Hyundai Elantra, silver Nissan Altima,
+    red Kia Soul, black Chevy Malibu, white Ford Escape]
+  show: [the new season, the finale, that documentary, the game, the playoffs, the debate, the Oscars]
+  weekday_phrase: [tomorrow, tonight, this weekend, Saturday, Sunday, next week, Friday]
+
+templates:
+  # ── OTP / 2FA ─────────────────────────────────────────────────────────────────────────────────────
+  - {id: otp_google, category: otp, weight: 2,
+     text: "G-{d6} is your Google verification code."}
+  - {id: otp_google_webotp, category: otp,
+     text: "Your Google verification code is {d6@code}\n\n@accounts.google.com #{d6@code}"}
+  - {id: otp_apple, category: otp, weight: 2,
+     text: "Your Apple Account code is: {d6}. Don't share it with anyone."}
+  - {id: otp_microsoft, category: otp,
+     text: "Use {d6} as Microsoft account security code"}
+  - {id: otp_amazon, category: otp, weight: 2,
+     text: "{d6} is your Amazon OTP. Don't share it with anyone."}
+  - {id: otp_meta, category: otp,
+     text: "{d6@code} is your {Facebook|Instagram} code. Don't share it. #{d6@code}"}
+  - {id: otp_whatsapp, category: otp,
+     text: "Your WhatsApp code: {code6_dash}\n\nDon't share this code with others"}
+  - {id: otp_paypal, category: otp,
+     text: "PayPal: Your security code is {d6}. Your code expires in 10 minutes. Please don't reply."}
+  - {id: otp_venmo, category: otp,
+     text: "Venmo here! NEVER share this code via call/text. ONLY YOU should enter the code. BEWARE: If someone asks for the code, it's a scam. Code: {d6}"}
+  - {id: otp_chase, category: otp,
+     text: "Chase: DON'T share this code with anyone. We'll NEVER call you to ask for it. Code: {d8}"}
+  - {id: otp_boa, category: otp,
+     text: "BofA: DO NOT share this code. We will NEVER call you or text you for it. Code {d6}. Reply HELP if you didn't request it."}
+  - {id: otp_wellsfargo, category: otp,
+     text: "Wells Fargo: Your one-time passcode is {d6}. Don't share it with anyone - we'll never ask for it."}
+  - {id: otp_uber, category: otp,
+     text: "Your Uber code: {d4}. Never share this code. Reply STOP ALL to unsubscribe."}
+  - {id: otp_lyft, category: otp,
+     text: "Your Lyft code is {d4}"}
+  - {id: otp_doordash, category: otp,
+     text: "Your DoorDash verification code is {d6}. Don't share this code with anyone."}
+  - {id: otp_discord, category: otp,
+     text: "Your Discord security code is: {d6}"}
+  - {id: otp_coinbase, category: otp,
+     text: "Your Coinbase verification code is: {d7_alias}. Don't share this code with anyone; our employees will never ask for the code.",
+     slots: {d7_alias: ["{d7}"]}}
+  - {id: otp_linkedin, category: otp,
+     text: "Your LinkedIn verification code is {d6}."}
+  - {id: otp_x, category: otp,
+     text: "{d6} is your X verification code. Don't share it."}
+  - {id: otp_airbnb, category: otp,
+     text: "Your Airbnb verification code is: {d6}. Don't share this code with anyone; we'll never ask for it."}
+  - {id: otp_steam, category: otp,
+     text: "Your Steam Guard code is {d5_alpha}",
+     slots: {d5_alpha: [R7K2P, 4MXQ9, T8WNB, 9HJ3C, KD2V7, P5QZR, 2XN8M, W4CFT]}}
+  - {id: otp_generic, category: otp, weight: 3,
+     text: "{Your|Your one-time} {verification|security|login|sign-in} code is {d6}. {It expires in {minutes} minutes.|Do not share this code.|Valid for {minutes} minutes.}"}
+  - {id: otp_generic_service, category: otp, weight: 2,
+     text: "{service}: {d6} is your {verification|login} code. Don't share it with anyone.",
+     slots: {service: [Robinhood, Etsy, Zillow, Hinge, Bumble, Ticketmaster, Turo, Instacart, Nextdoor, Signal,
+       Telegram, Snapchat, TikTok, Duolingo, Peloton, Strava, Dropbox, Slack, Zoom, Square, Shopify, Yahoo]}}
+  - {id: otp_pharmacy_login, category: otp,
+     text: "Your {CVS|Walgreens} Pharmacy verification code is {d6}. This code expires in 10 min."}
+  - {id: otp_patient_portal, category: otp,
+     text: "MyChart verification code: {d6}. If you didn't request this, you can ignore this message."}
+  - {id: otp_irs_idme, category: otp,
+     text: "ID.me: {d6} is your verification code. Never share this code with anyone."}
+  - {id: otp_school_portal, category: otp,
+     text: "Your PowerSchool sign-in code is {d6}. It will expire in 15 minutes."}
+
+  # ── Deliveries (official carriers / retailers) ───────────────────────────────────────────────────
+  - {id: del_usps_delivered, category: delivery, weight: 2,
+     text: "USPS: Your item was delivered in or at the mailbox at {time} on {date_long} in {state_city}. Reply STOP to cancel tracking."}
+  - {id: del_usps_out, category: delivery,
+     text: "USPS: Your item is out for delivery on {date_long} in {state_city}. Reply STOP to cancel tracking. Details: https://usps.com/track"}
+  - {id: del_ups_scheduled, category: delivery,
+     text: "UPS: Your package {track_ups@t} is scheduled for delivery {weekday} by end of day. Track: https://www.ups.com/track?tracknum={track_ups@t}"}
+  - {id: del_ups_delivered, category: delivery,
+     text: "UPS: Your package was delivered {at the front door|to the front porch|at the side door} at {time}. Reply STOP to end texts."}
+  - {id: del_fedex_out, category: delivery,
+     text: "FedEx: Your package is out for delivery. Estimated delivery window {time}-{time}. Track at https://www.fedex.com/fedextrack/?trknbr={track_fedex}"}
+  - {id: del_fedex_signature, category: delivery,
+     text: "FedEx: We attempted delivery of package {track_fedex} today. A signature is required. We'll try again {weekday}. Manage at fedex.com/delivery"}
+  - {id: del_amazon_delivered, category: delivery, weight: 3,
+     text: "Amazon: Your package with {product} was delivered. {It was handed to a resident.|It was left at the front door.|See photo:} https://a.co/d/{alnum7}",
+     slots: {alnum7: [5xK9pQ2, aB3dE7f, 9GhJk2L, Qw8rT4y, Zx1cV6b, mN7pL3k, 4tYu8Io, Hj2Kl9P]}}
+  - {id: del_amazon_today, category: delivery,
+     text: "Amazon: Your {product} order arrives today. Track your package at amazon.com/orders"}
+  - {id: del_dhl, category: delivery,
+     text: "DHL: Your shipment {track_fedex} from {store} will be delivered on {date_md}. Track at https://www.dhl.com/us-en/home/tracking.html",
+     slots: {store: [SHEIN, Temu, Etsy, a seller in Germany, Lululemon]}}
+  - {id: del_walmart, category: delivery,
+     text: "Walmart: Your order {order} is out for delivery and will arrive by {time}. Track at walmart.com/orders"}
+  - {id: del_target, category: delivery,
+     text: "Target: Your Drive Up order is ready! Head to {city} Target and tap 'I'm on my way' in the app."}
+  - {id: del_instacart, category: delivery,
+     text: "Instacart: {first_name} has started shopping your order from {store}. You'll get updates as they shop.",
+     slots: {store: [Costco, H-E-B, Kroger, Safeway, Publix, Aldi, Sprouts]}}
+  - {id: del_doordash_dasher, category: delivery,
+     text: "DoorDash: Your Dasher {first_name} is on the way with your order from {restaurant}. Arriving around {time}."}
+  - {id: del_ubereats, category: delivery,
+     text: "Uber Eats: {first_name} is arriving now with your {restaurant} order. Please meet at the door."}
+  - {id: del_grubhub, category: delivery,
+     text: "Grubhub: Your order from {restaurant} has been picked up and is on its way! Est. delivery {time}."}
+  - {id: del_package_locker, category: delivery,
+     text: "Your Amazon package is ready for pickup at Amazon Locker - {locker}. Pickup code: {d6}. Pick up by {date_md}.",
+     slots: {locker: [Chiquita, Halyard, Nimbus, Tango, Quartz, Juniper]}}
+
+  # ── Appointments ─────────────────────────────────────────────────────────────────────────────────
+  - {id: appt_doctor, category: appointment, weight: 2,
+     text: "Reminder: You have an appointment with {doctor} on {date_md} at {time}. Reply C to confirm or R to reschedule. Call {phone} with questions."}
+  - {id: appt_dentist, category: appointment, weight: 2,
+     text: "{Bright Smile|Lakeside|Riverside|Parkview} Dental: Hi {first_name}, this is a reminder of your cleaning on {weekday} {date_md} at {time}. Reply YES to confirm."}
+  - {id: appt_vet, category: appointment,
+     text: "{Banfield|VCA|Happy Paws} Pet Hospital: {pet} is due for a checkup on {date_md} at {time}. Reply C to confirm, or call {phone}."}
+  - {id: appt_salon, category: appointment,
+     text: "Hi {first_name}! Just a reminder about your {haircut|color appointment|blowout|nail appointment} with {first_name} {weekday_phrase} at {time}. See you then!"}
+  - {id: appt_barber, category: appointment,
+     text: "Your appointment at {Fade Factory|Classic Cuts|Main St Barbers} is confirmed for {weekday} at {time}. Reply CANCEL to cancel."}
+  - {id: appt_eye, category: appointment,
+     text: "This is a reminder from {Eye Care Associates|Vision Works|Clear View Optometry} for your eye exam on {date_md} at {time}. Please bring your insurance card."}
+  - {id: appt_pt, category: appointment,
+     text: "Physical therapy reminder: {weekday} {date_md} at {time} with {first_name}. Wear comfortable clothes. Reply C to confirm."}
+  - {id: appt_car, category: appointment,
+     text: "{Jiffy Lube|Firestone|Discount Tire|your Toyota dealer}: Your service appointment is {weekday} at {time}. Reply C to confirm or call {phone}."}
+  - {id: appt_car_ready, category: appointment,
+     text: "Your vehicle is ready for pickup. Total due ${n:89-640}.{n:10-99}. We're open until 6 PM. - {Firestone|Midas|Precision Auto}"}
+  - {id: appt_lab, category: appointment,
+     text: "Your lab results are available. Log in to MyChart to view them. Please do not reply to this message."}
+  - {id: appt_telehealth, category: appointment,
+     text: "Your video visit with {doctor} starts in {minutes} minutes. Join from the MyChart app."}
+  - {id: appt_restaurant, category: appointment,
+     text: "Your table for {n:2-6} at {Olive Garden|The Cheesecake Factory|Fogo de Chao|a local bistro} is ready! Please check in at the host stand within 10 minutes."}
+  - {id: appt_resy, category: appointment,
+     text: "Reminder: your reservation for {n:2-6} tonight at {time}. Reply 1 to confirm, 2 to cancel."}
+
+  # ── Pharmacy ──────────────────────────────────────────────────────────────────────────────────────
+  - {id: rx_cvs_ready, category: pharmacy, weight: 2,
+     text: "CVS Pharmacy: Your prescription is ready for pickup at {n:100-9999} {street}. Reply STOP to opt out."}
+  - {id: rx_walgreens, category: pharmacy,
+     text: "Walgreens: Rx ready for {first_name_initial}. at {street} & {street}. Pick up within 7 days. Reply STOP to end.",
+     slots: {first_name_initial: [S, M, J, P, A, C, T, D, K, L, R]}}
+  - {id: rx_refill_due, category: pharmacy,
+     text: "{CVS|Walgreens|Kroger|H-E-B|Costco} Pharmacy: A refill for your prescription is due. Reply 1 to refill now or 2 to skip."}
+  - {id: rx_insurance, category: pharmacy,
+     text: "{CVS|Walgreens} Pharmacy: We need more info from your insurance before filling your Rx. Please call us at {phone}."}
+  - {id: rx_mail_order, category: pharmacy,
+     text: "Express Scripts: Your order shipped and should arrive by {date_md}. Track it in the app."}
+  - {id: rx_vaccine, category: pharmacy,
+     text: "It's time for your {flu|COVID-19|RSV} vaccine! Walk in at any {CVS|Walgreens} or schedule in the app. Reply STOP to opt out."}
+
+  # ── Bank / card alerts (legitimate: no links or official domains only) ────────────────────────────
+  - {id: bank_chase_txn, category: bank, weight: 2,
+     text: "Chase: A {amount} debit card transaction to {merchant} on {date_md} exceeded your $25.00 alert limit."}
+  - {id: bank_wf_card, category: bank,
+     text: "Wells Fargo: Card ending in {last4} was used for {amount} at {merchant}. Reply STOP to cancel alerts."}
+  - {id: bank_boa_deposit, category: bank,
+     text: "BofA: Your direct deposit of {amount_big} posted to account ending in {last4}."}
+  - {id: bank_capone_payment, category: bank,
+     text: "Capital One: Your payment of {amount} for your card ending in {last4} has posted. Thank you!"}
+  - {id: bank_amex_fraud, category: bank,
+     text: "American Express Fraud Alert: Did you use your card ending in {last4} for {amount} at {merchant}? Reply Y if yes, N if no. Do not click links in texts."}
+  - {id: bank_citi_balance, category: bank,
+     text: "Citi Alert: Your available balance for account ending in {last4} is {amount_big} as of {date_md}."}
+  - {id: bank_discover, category: bank,
+     text: "Discover: Your statement balance of {amount} is due {date_md}. Pay in the Discover app or at discover.com."}
+  - {id: bank_low_balance, category: bank,
+     text: "{Chase|Wells Fargo|US Bank|PNC|Truist}: Low balance alert. Your checking account ending in {last4} has a balance of {amount}."}
+  - {id: bank_venmo_paid, category: bank, weight: 2,
+     text: "Venmo: {first_name} paid you {amount_round}. \"{note}\"",
+     slots: {note: [pizza 🍕, rent, concert tix, groceries, 🍻, gas money, birthday gift 🎁, dinner, Uber, utilities]}}
+  - {id: bank_zelle, category: bank,
+     text: "{Chase|Wells Fargo|BofA}: {first_name} sent you {amount_round} with Zelle. The money is in your account."}
+  - {id: bank_card_shipped, category: bank,
+     text: "Your new {Chase|Capital One|Discover} card ending in {last4} has shipped and should arrive in 5-7 business days."}
+  - {id: bank_large_purchase, category: bank,
+     text: "USAA: Purchase of {amount_big} at {merchant} approved on card ending {last4}. Not you? Call the number on the back of your card."}
+  - {id: bank_autopay, category: bank,
+     text: "{Ally|SoFi|Navy Federal}: Your auto loan payment of {amount} is scheduled for {date_md}."}
+
+  # ── Utility / carrier / account notices ──────────────────────────────────────────────────────────
+  - {id: util_verizon_bill, category: account,
+     text: "Verizon: Your bill is ready. Amount due {amount} on {date_md}. View at vzw.com/mybill"}
+  - {id: util_tmobile, category: account,
+     text: "T-Mobile: Your autopay payment of {amount} is scheduled for {date_md}. Questions? Dial 611."}
+  - {id: util_att, category: account,
+     text: "AT&T Free Msg: Your bill for {date_long} is {amount}. AutoPay will process on {date_md}."}
+  - {id: util_xfinity, category: account,
+     text: "Xfinity: We're aware of an outage in your area. Our techs are working on it. Estimated restoration {time}. Reply STOP to opt out."}
+  - {id: util_power_outage, category: alert, weight: 2,
+     text: "{Austin Energy|Duke Energy|PG&E|Xcel Energy|Georgia Power|ComEd}: We're aware of an outage affecting {n:120-9800} customers near you. Estimated restoration: {time}. Reply STOP to unsubscribe."}
+  - {id: util_power_restored, category: alert,
+     text: "{Duke Energy|PG&E|Xcel Energy|ComEd}: Power has been restored to your area. If you are still without power, reply OUT."}
+  - {id: util_water, category: alert,
+     text: "City of {city} Water: A boil water notice is in effect for zip {zip} until further notice. Updates at the city website."}
+  - {id: util_gas_appt, category: account,
+     text: "{Atmos Energy|Southern Company Gas|Spire}: Your technician will arrive between {time} and {time} {weekday_phrase}."}
+  - {id: acct_password_changed, category: account,
+     text: "Your {Netflix|Hulu|Spotify|Disney+|Max} password was changed. If you didn't do this, open the app to secure your account."}
+  - {id: acct_new_signin, category: account,
+     text: "New sign-in to your {Google|Microsoft|Apple} account on a {Windows|Mac|iPhone|Android} device. If this was you, you can ignore this message."}
+  - {id: acct_subscription, category: account,
+     text: "Apple: Your subscription to {iCloud+|Apple Music|Apple TV+} will renew on {date_md} for {amount}."}
+  - {id: acct_receipt_uber, category: account,
+     text: "Thanks for riding with Uber, {first_name}! Your trip total was {amount}. View receipt in the app."}
+
+  # ── School / government / weather alerts ─────────────────────────────────────────────────────────
+  - {id: alert_school_delay, category: alert, weight: 2,
+     text: "{school}: Due to icy roads, all schools will open 2 hours late {weekday}. Buses will run 2 hours later than normal."}
+  - {id: alert_school_closed, category: alert,
+     text: "{city} Public Schools will be CLOSED {weekday} due to {severe weather|a power outage|a water main break}. All after-school activities are canceled."}
+  - {id: alert_school_absence, category: alert,
+     text: "{school}: Your student was marked absent for period {n:1-7} today. Please call the attendance office at {phone} to excuse the absence."}
+  - {id: alert_school_event, category: alert,
+     text: "{school} PTA: Reminder - picture day is {weekday}! Order forms went home in backpacks."}
+  - {id: alert_library, category: alert,
+     text: "{city} Public Library: You have {n:1-4} hold(s) ready for pickup. Items will be held for 7 days."}
+  - {id: alert_dmv, category: alert,
+     text: "{Texas DMV|Colorado DMV|Georgia DDS}: Your vehicle registration for plate {plate} expires {date_md}. Renew online at the official state DMV website."}
+  - {id: alert_jury, category: alert,
+     text: "{city} County Jury Services: Your jury service on {date_md} is CONFIRMED. Report at 8:00 AM. Do not reply."}
+  - {id: alert_county, category: alert,
+     text: "Ready{city_nospace}: Flash Flood Warning in effect until {time}. Avoid low water crossings. Turn around, don't drown.",
+     slots: {city_nospace: [Harris, Austin, Denver, Nashville, Tampa, Charlotte, Phoenix]}}
+  - {id: alert_heat, category: alert,
+     text: "{city} OEM: Extreme heat advisory today with temps up to {n:101-114}°F. Cooling centers are open at all public libraries."}
+  - {id: alert_vote, category: alert,
+     text: "{city} County Elections: Early voting runs through {date_md}. Find your polling place at the county elections website. Reply STOP to opt out."}
+  - {id: alert_trash, category: alert,
+     text: "Reminder: Due to the holiday, trash and recycling pickup will be delayed one day this week. - City of {city}"}
+  - {id: alert_hoa, category: alert,
+     text: "{Oak Hollow|Willow Creek|Lakeside} HOA: The pool will be closed {weekday} for maintenance. Thanks for your patience!"}
+
+  # ── Travel / rides ───────────────────────────────────────────────────────────────────────────────
+  - {id: travel_flight_gate, category: travel, weight: 2,
+     text: "{airline}: Flight {flightno} to {airport} now departs at {time} from gate {gate}. Check the app for updates."}
+  - {id: travel_flight_delay, category: travel,
+     text: "{airline}: We're sorry, flight {flightno} is delayed. New departure time {time}. We'll keep you posted."}
+  - {id: travel_checkin, category: travel,
+     text: "It's time to check in for your {airline} flight {flightno} to {airport} tomorrow. Check in on the app."}
+  - {id: travel_bag, category: travel,
+     text: "{airline}: Your checked bag is on carousel {n:1-12}. Welcome to {city}!"}
+  - {id: travel_uber_arriving, category: travel, weight: 2,
+     text: "Your Uber is arriving now. Look for a {car}, plate {plate}."}
+  - {id: travel_lyft_driver, category: travel,
+     text: "Lyft: {first_name} is {n:2-8} min away in a {car} ({plate})."}
+  - {id: travel_hotel, category: travel,
+     text: "{Hilton|Marriott|Hyatt} {city}: Your room is ready! Your digital key is available in the app."}
+  - {id: travel_amtrak, category: travel,
+     text: "Amtrak: Train {n:20-899} departing {city} is on time. Boarding begins at {time}."}
+  - {id: travel_rental_car, category: travel,
+     text: "{Enterprise|Hertz|Avis}: Your car is ready at the {airport} counter. Confirmation {d8}."}
+  - {id: travel_parking, category: travel,
+     text: "ParkMobile: Your parking session in zone {n:1000-9999} expires in {minutes} minutes. Extend in the app."}
+
+  # ── Opted-in promotions (legitimate marketing the user signed up for) ────────────────────────────
+  - {id: promo_oldnavy, category: promo,
+     text: "Old Navy: {pct} off EVERYTHING today only! Shop now at oldnavy.com. Reply STOP to opt out. Msg&data rates may apply."}
+  - {id: promo_target, category: promo,
+     text: "Target Circle: Your weekly deals are here 🎯 Save on household essentials this week in the app. Reply STOP to end."}
+  - {id: promo_sephora, category: promo,
+     text: "Sephora: Beauty Insider, your birthday gift is waiting! Redeem in store or at sephora.com. Txt STOP to quit."}
+  - {id: promo_dominos, category: promo,
+     text: "Domino's: Get 2 or more medium 2-topping pizzas for $6.99 each this week. Order at dominos.com. Reply STOP to opt out."}
+  - {id: promo_starbucks, category: promo,
+     text: "Starbucks: Double Star Day is today! Earn 2x Stars on every purchase until 11:59 PM. Reply STOP to cancel."}
+  - {id: promo_restaurant_local, category: promo, weight: 2,
+     text: "{restaurant}: Show this text for {a free drink|$5 off|a free side|BOGO entrees} with any purchase {weekday_phrase}! Reply STOP to unsubscribe."}
+  - {id: promo_gym, category: promo,
+     text: "{Planet Fitness|Orangetheory|LA Fitness}: Bring a friend free all week! Reply STOP to opt out."}
+  - {id: promo_kohls, category: promo,
+     text: "Kohl's: Your Kohl's Cash expires {date_md}! Use it in store or at kohls.com. Reply HELP for help, STOP to stop."}
+  - {id: promo_petstore, category: promo,
+     text: "{Petco|PetSmart}: Hi {first_name}, {pet}'s grooming is 20% off this month. Book in the app. Reply STOP to opt out."}
+  - {id: promo_carwash, category: promo,
+     text: "{Mister Car Wash|Quick Quack}: Unlimited plan members get a free tire shine this weekend! Reply STOP to unsubscribe."}
+  - {id: promo_bestbuy, category: promo,
+     text: "Best Buy: Your order is ready for store pickup. Bring your ID and order number {order}. Reply STOP to opt out."}
+  - {id: promo_survey, category: promo,
+     text: "Thanks for visiting {restaurant}! Tell us about your visit in the app and get a free item on your next order. Reply STOP to opt out."}
+
+  # ── Personal conversations ───────────────────────────────────────────────────────────────────────
+  - {id: p_late, category: personal, weight: 2,
+     text: "{Running|Gonna be} {n:5-20} min late, {sorry!|traffic is awful|save me a seat|start without me}"}
+  - {id: p_pickup, category: personal, weight: 2,
+     text: "Can you pick up {milk|eggs|bread|diapers|dog food|paper towels} on the way home?"}
+  - {id: p_birthday, category: personal, weight: 2,
+     text: "Happy birthday {first_name}!! 🎉 Hope you have the best day"}
+  - {id: p_dinner, category: personal, weight: 2,
+     text: "{family} says dinner at {n:5-7} on Sunday, can you bring {dessert|a salad|drinks|rolls}?"}
+  - {id: p_call_me, category: personal,
+     text: "Call me when you get a chance, nothing urgent"}
+  - {id: p_thanks, category: personal,
+     text: "Thanks for {today|dinner|helping me move|the ride|coming}, {had a great time|you're the best|really appreciate it} ❤️"}
+  - {id: p_game, category: personal,
+     text: "Did you see {show} last night?? {I can't believe that ending|Unreal|We need to talk about it}"}
+  - {id: p_food_plan, category: personal, weight: 2,
+     text: "{Want to|Wanna} grab {food} {weekday_phrase}?"}
+  - {id: p_omw, category: personal, weight: 2,
+     text: "{omw|On my way|Leaving now}, be there in {n:5-25}"}
+  - {id: p_where, category: personal,
+     text: "Where are you? We're by {place}"}
+  - {id: p_kid_pickup, category: personal, weight: 2,
+     text: "Can you get the kids from {school} today? I'm stuck in a meeting until {time}"}
+  - {id: p_pet, category: personal,
+     text: "Did you feed {pet}? {She|He} keeps looking at me like {she|he} didn't eat lol"}
+  - {id: p_photo, category: personal,
+     text: "Sending you the pics from {Saturday|the party|the trip|the game} in a sec"}
+  - {id: p_ok, category: personal, weight: 2,
+     text: "{Ok sounds good|Sounds good!|Perfect, see you then|Yep|Works for me|👍|lol yes|Haha ok}"}
+  - {id: p_love, category: personal,
+     text: "Love you, {drive safe|have a good night|good luck today|talk tomorrow}"}
+  - {id: p_mom_checkin, category: personal,
+     text: "Hi honey, just checking in. Did you make it home ok? Love, {family}"}
+  - {id: p_work_meeting, category: personal, weight: 2,
+     text: "Meeting moved to {time}, {conference room B|same Zoom link|we'll do it in my office}"}
+  - {id: p_work_shift, category: personal,
+     text: "Hey can you cover my shift {weekday}? I'll take your {weekday} one"}
+  - {id: p_landlord, category: personal,
+     text: "Hi it's {first_name}, your landlord. The plumber will come by {weekday} between {time} and {time} to look at the sink."}
+  - {id: p_contractor, category: personal,
+     text: "Hi this is {first_name} with {Smith|Garcia|Rivera} Roofing, I can come by {weekday} at {time} to give you the estimate. Does that work?"}
+  - {id: p_neighbor, category: personal,
+     text: "Hey it's {first_name} next door, your package got left on our porch. I'll bring it over tonight!"}
+  - {id: p_coach, category: personal, weight: 2,
+     text: "{sport} {team_thing} is moved to {time} {weekday} because of the {weather|field schedule|tournament}. Please bring water!"}
+  - {id: p_group_plan, category: personal,
+     text: "Who's in for {food} after {team_thing}? I'll make a reservation for {n:4-10}"}
+  - {id: p_money_back, category: personal,
+     text: "I venmo'd you for {the tickets|dinner|the groceries|my half}, thanks again!"}
+  - {id: p_doctor_update, category: personal,
+     text: "Just got out of the doctor, everything's fine. Will call you later"}
+  - {id: p_flight_landed, category: personal,
+     text: "Just landed in {city}! {Grabbing my bag now|Taking an Uber to the hotel|Call you in a bit}"}
+  - {id: p_address, category: personal,
+     text: "The address is {n:100-9999} {street}, {city}. {Park on the street|Gate code is {d4}|Ring the bell}"}
+  - {id: p_recipe, category: personal,
+     text: "{family} can you send me the recipe for your {lasagna|chili|banana bread|enchiladas|pie}?"}
+  - {id: p_wfh, category: personal,
+     text: "Working from home today if you need anything. Call or text"}
+  - {id: p_short_question, category: personal, weight: 2,
+     text: "{Are you home?|You up?|What time is it starting?|Did you lock the door?|Is the game on yet?|Where'd you park?|How'd it go??}"}
+
+  # ── First contact (new number, but legitimate) ───────────────────────────────────────────────────
+  - {id: fc_team, category: first_contact, weight: 2,
+     text: "Hi, this is {first_name} from the {sport} team. Got your number from Coach {first_name}. Are you still able to drive to {team_thing} on Saturday?"}
+  - {id: fc_new_number, category: first_contact, weight: 2,
+     text: "Hey it's {first_name}! This is my new number, please save it 😊"}
+  - {id: fc_met_party, category: first_contact,
+     text: "Hi! This is {first_name}, we met at {first_name}'s party on {weekday}. It was great talking to you!"}
+  - {id: fc_dog_walker, category: first_contact,
+     text: "Hi, I'm {first_name}, the dog walker {first_name} recommended. I'm available weekdays around noon. Happy to do a meet and greet with {pet}!"}
+  - {id: fc_marketplace, category: first_contact,
+     text: "Hi, I'm interested in the {couch|bike|crib|desk|TV} you listed. Is it still available? I can pick up {weekday_phrase}."}
+  - {id: fc_school_parent, category: first_contact,
+     text: "Hi, this is {first_name@kid}'s mom from {school}. Would {first_name@kid} like to come over for a playdate {weekday_phrase}?"}
+  - {id: fc_recruiter_legit, category: first_contact,
+     text: "Hi {first_name}, this is {first_name} from {Acme Corp|Northwind|Globex} HR. Following up on your interview yesterday - are you free for a quick call {weekday} at {time}?"}
+  - {id: fc_doctor_office, category: first_contact,
+     text: "Hi, this is {first_name} from {doctor}'s office. We had a cancellation tomorrow at {time} if you'd like an earlier appointment. Let us know!"}
+  - {id: fc_contractor_quote, category: first_contact,
+     text: "Hello, this is {first_name} from {Blue Sky|Precision|Reliable} Plumbing returning your call. We can come out {weekday} morning. What's the address?"}
+  - {id: fc_church, category: first_contact,
+     text: "Hi {first_name}, it's {first_name} from {St. Mark's|Grace Community|First Baptist}. Just wanted to say welcome and see you Sunday!"}
+  - {id: fc_tutor, category: first_contact,
+     text: "Hi, this is {first_name}, the {math|chemistry|piano|Spanish} tutor. Confirming our first session {weekday} at {time}."}
+  - {id: fc_wrong_legit, category: first_contact,
+     text: "Sorry, I think I have the wrong number! Have a good one"}
+  - {id: fc_carpool, category: first_contact,
+     text: "Hi! {first_name} here, {first_name}'s dad. Want to set up a carpool for {sport}? We live near {place}."}

@@ -1,0 +1,133 @@
+# Brand keyword → the brand's official registrable domains (per SPEC.md `domain`, using psl_lite_v1.txt).
+# Format: keyword<TAB>official1,official2,...[<TAB>sub|word] (lowercase). Matching follows SPEC.md brand_lookalike: keywords of
+# >= 5 chars match as substrings of the host; shorter ones only match a whole host word (host split on . and -),
+# because short brands are substrings of ordinary words (ups→groups, irs→critairs, amex→aramex, nab→personab).
+# The usps-/-usps/usps. rows recover common glued USPS look-alikes that the whole-word rule would miss.
+# Generic words (discover, target-like retail words) are only listed when look-alike risk outweighs collisions.
+# --- Retail / marketplaces
+amazon	amazon.com,amazon.ca,amazon.co.uk,amazon.com.au,amazon.in,amazon.de,amazon.fr,amazon.com.mx,a.co
+amzn	amzn.to,amzn.com,amazon.com,a.co
+walmart	walmart.com
+costco	costco.com
+target	target.com	word
+bestbuy	bestbuy.com
+geeksquad	geeksquad.com,bestbuy.com
+homedepot	homedepot.com
+lowes	lowes.com
+ebay	ebay.com
+etsy	etsy.com
+instacart	instacart.com
+doordash	doordash.com
+uber	uber.com
+lyft	lyft.com
+airbnb	airbnb.com
+# --- Tech / accounts
+apple	apple.com,icloud.com,apple.news
+icloud	icloud.com,apple.com
+itunes	itunes.com,apple.com
+microsoft	microsoft.com,live.com,office.com,microsoftonline.com,outlook.com,microsoft365.com
+outlook	outlook.com,live.com,office.com,microsoft.com
+office365	office.com,microsoft.com
+google	google.com,g.co,google.co.uk
+gmail	gmail.com,google.com
+youtube	youtube.com,youtu.be
+facebook	facebook.com,fb.com,fb.me,meta.com
+instagram	instagram.com
+whatsapp	whatsapp.com,wa.me
+tiktok	tiktok.com
+snapchat	snapchat.com
+linkedin	linkedin.com,lnkd.in
+netflix	netflix.com
+hulu	hulu.com
+disney	disneyplus.com,disney.com,go.com
+spotify	spotify.com
+docusign	docusign.com,docusign.net
+dropbox	dropbox.com
+adobe	adobe.com
+norton	norton.com
+mcafee	mcafee.com
+steam	steampowered.com,steamcommunity.com	word
+roblox	roblox.com
+playstation	playstation.com
+nintendo	nintendo.com
+# --- Payments / crypto
+paypal	paypal.com,paypal.me
+venmo	venmo.com
+zelle	zellepay.com,zelle.com
+cashapp	cash.app,squareup.com
+coinbase	coinbase.com
+binance	binance.com,binance.us
+# --- US banks / cards
+chase	chase.com,jpmorganchase.com,jpmorgan.com	word
+wellsfargo	wellsfargo.com,wf.com
+bankofamerica	bankofamerica.com,bofa.com
+bofa	bankofamerica.com,bofa.com
+citibank	citi.com,citibank.com
+citi	citi.com,citibank.com
+capitalone	capitalone.com
+usbank	usbank.com
+pnc	pnc.com
+truist	truist.com
+navyfederal	navyfederal.org
+usaa	usaa.com
+discovercard	discover.com
+amex	americanexpress.com,amex.com,aexp.com
+americanexpress	americanexpress.com
+synchrony	synchrony.com,mysynchrony.com
+ally	ally.com
+sofi	sofi.com
+chime	chime.com	word
+# --- Carriers / ISPs
+verizon	verizon.com,vzw.com,verizonwireless.com
+t-mobile	t-mobile.com
+tmobile	t-mobile.com
+att	att.com,att.net
+xfinity	xfinity.com,comcast.com,comcast.net
+comcast	comcast.com,comcast.net,xfinity.com
+spectrum	spectrum.net,spectrum.com,charter.com
+# --- Delivery
+usps	usps.com
+usps-	usps.com
+-usps	usps.com
+usps.	usps.com
+informeddelivery	usps.com
+ups	ups.com
+fedex	fedex.com
+dhl	dhl.com,dhl.de
+ontrac	ontrac.com
+evri	evri.com
+royalmail	royalmail.com
+auspost	auspost.com.au
+canadapost	canadapost-postescanada.ca,canadapost.ca
+# --- Government / tolls (US)
+irs	irs.gov
+ssa	ssa.gov
+socialsecurity	ssa.gov
+medicare	medicare.gov
+dmv	ca.gov,ny.gov,txdmv.gov,flhsmv.gov,virginia.gov,nj.gov,pa.gov,ohio.gov,illinois.gov,michigan.gov,georgia.gov,nc.gov,wa.gov,az.gov
+ezpass	e-zpassny.com,ezpassnj.com,ezpassva.com,ezpassmd.com,ezpassde.com,ezpassma.com,ezpassnh.com,ezpassoh.com,ezpassin.com,ezpassil.com,ezpassri.com,e-zpassiag.com,paturnpike.com
+e-zpass	e-zpassny.com,ezpassnj.com,ezpassva.com,ezpassmd.com,ezpassde.com,ezpassma.com,ezpassnh.com,ezpassoh.com,ezpassin.com,ezpassil.com,ezpassri.com,e-zpassiag.com,paturnpike.com
+sunpass	sunpass.com
+fastrak	bayareafastrak.org,thetollroads.com,fastrak.org
+txtag	txtag.org
+ntta	ntta.org
+peachpass	peachpass.com
+ipass	illinoistollway.com
+thetollroads	thetollroads.com
+goodtogo	mygoodtogo.com,wa.gov
+# --- International brands frequent in the training corpora
+hmrc	gov.uk
+dvla	gov.uk
+nhs	nhs.uk
+linkt	linkt.com.au	word
+mygov	my.gov.au
+commbank	commbank.com.au
+anz	anz.com,anz.com.au
+nab	nab.com.au
+westpac	westpac.com.au
+sbi	onlinesbi.sbi,sbi.co.in,onlinesbi.com
+hdfc	hdfcbank.com
+icici	icicibank.com
+paytm	paytm.com
+kotak	kotak.com
+airtel	airtel.in,airtel.com
