@@ -62,14 +62,16 @@ class SmsProviderGateway(context: Context) {
             arrayOf(address, dateSent.toString(), body), null,
         )?.use { c -> if (c.moveToFirst()) c.getLong(0) else null }
 
-    fun markThreadRead(threadId: Long): Int {
+    /** Marks [ids] read and seen, in chunks. */
+    fun markRead(ids: List<Long>): Int = ids.chunked(500).sumOf { chunk ->
+        val placeholders = chunk.joinToString(",") { "?" }
         val values = ContentValues().apply {
             put(Sms.READ, 1)
             put(Sms.SEEN, 1)
         }
-        return resolver.update(
-            Sms.CONTENT_URI, values, "${Sms.THREAD_ID} = ? AND (${Sms.READ} = 0 OR ${Sms.SEEN} = 0)",
-            arrayOf(threadId.toString()),
+        resolver.update(
+            Sms.CONTENT_URI, values, "${Sms._ID} IN ($placeholders) AND (${Sms.READ} = 0 OR ${Sms.SEEN} = 0)",
+            chunk.map { it.toString() }.toTypedArray(),
         )
     }
 
@@ -82,11 +84,11 @@ class SmsProviderGateway(context: Context) {
         )
     }
 
-    fun deleteMessage(id: Long): Int = resolver.delete(ContentUris.withAppendedId(Sms.CONTENT_URI, id), null, null)
-
-    /** Deletes only the thread's SMS rows; MMS rows the app can't show are left alone. */
-    fun deleteThreadSms(threadId: Long): Int =
-        resolver.delete(Sms.CONTENT_URI, "${Sms.THREAD_ID} = ?", arrayOf(threadId.toString()))
+    /** Deletes [ids] in chunks (SMS rows only: MMS rows the app can't show are left alone). */
+    fun deleteMessages(ids: List<Long>): Int = ids.chunked(500).sumOf { chunk ->
+        val placeholders = chunk.joinToString(",") { "?" }
+        resolver.delete(Sms.CONTENT_URI, "${Sms._ID} IN ($placeholders)", chunk.map { it.toString() }.toTypedArray())
+    }
 
     fun query(id: Long): ProviderSms? =
         resolver.query(ContentUris.withAppendedId(Sms.CONTENT_URI, id), FULL, null, null, null)

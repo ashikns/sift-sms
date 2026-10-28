@@ -5,6 +5,9 @@ import androidx.room3.Query
 import androidx.room3.Upsert
 import kotlinx.coroutines.flow.Flow
 
+/** A message's [Folder] in SQL, for queries over `messages m LEFT JOIN classifications c ON c.messageId = m.id`. */
+const val FOLDER_OF = "(CASE WHEN m.type = 1 AND COALESCE(c.effectiveLabel, 0) = 2 THEN 1 ELSE 0 END)"
+
 @Dao
 interface MessageDao {
     @Upsert
@@ -28,8 +31,14 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id IN (:ids)")
     suspend fun deleteIds(ids: List<Long>)
 
-    @Query("SELECT id FROM messages WHERE threadId = :threadId")
-    suspend fun idsInThread(threadId: Long): List<Long>
+    @Query("SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id WHERE m.threadId = :threadId AND " + FOLDER_OF + " = :folder")
+    suspend fun idsIn(threadId: Long, folder: Int): List<Long>
+
+    @Query(
+        "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
+            "WHERE m.threadId = :threadId AND m.type = 1 AND m.read = 0 AND " + FOLDER_OF + " = :folder",
+    )
+    suspend fun unreadIdsIn(threadId: Long, folder: Int): List<Long>
 
     @Query("UPDATE messages SET missingSince = :ts WHERE id IN (:ids) AND missingSince IS NULL")
     suspend fun markMissing(ids: List<Long>, ts: Long)
@@ -46,8 +55,8 @@ interface MessageDao {
     @Query("SELECT DISTINCT threadId FROM messages WHERE id IN (:ids)")
     suspend fun threadsOf(ids: List<Long>): List<Long>
 
-    @Query("UPDATE messages SET read = 1 WHERE threadId = :threadId AND read = 0")
-    suspend fun markThreadRead(threadId: Long): Int
+    @Query("UPDATE messages SET read = 1 WHERE id IN (:ids) AND read = 0")
+    suspend fun markRead(ids: List<Long>): Int
 
     @Query("UPDATE messages SET read = 0, mutableHash = :mutableHash WHERE id = :id AND read = 1")
     suspend fun markUnread(id: Long, mutableHash: Int): Int
@@ -98,9 +107,9 @@ interface MessageDao {
             "c.modelScore AS modelScore, c.reason AS reason, c.cues AS cues, " +
             "c.userLabel AS userLabel, c.state AS classState, c.modelVersion AS modelVersion " +
             "FROM messages m LEFT JOIN classifications c ON c.messageId = m.id " +
-            "WHERE m.threadId = :threadId ORDER BY m.date DESC, m.id DESC",
+            "WHERE m.threadId = :threadId AND " + FOLDER_OF + " = :folder ORDER BY m.date DESC, m.id DESC",
     )
-    fun observeThread(threadId: Long): Flow<List<ThreadMessageRow>>
+    fun observeThread(threadId: Long, folder: Int): Flow<List<ThreadMessageRow>>
 
     @Query(
         "SELECT m.id, m.threadId, m.address, m.body, m.date, m.type, m.status, m.read, " +
@@ -121,6 +130,10 @@ interface MessageDao {
             "FROM messages m LEFT JOIN classifications c ON c.messageId = m.id ORDER BY m.date DESC, m.id DESC LIMIT :limit",
     )
     suspend fun debugMessages(limit: Int): List<ThreadMessageRow>
+
+    /** Every incoming message's folder, for the rescan's summary of what moved. */
+    @Query("SELECT m.id, " + FOLDER_OF + " AS folder FROM messages m LEFT JOIN classifications c ON c.messageId = m.id WHERE m.type = 1")
+    suspend fun incomingFolders(): List<MessageFolder>
 
     @Query("SELECT (date / 604800000) AS week, COUNT(*) AS count FROM messages WHERE type = 1 GROUP BY week")
     suspend fun incomingPerWeek(): List<WeekCount>
@@ -172,38 +185,39 @@ interface ConversationDao {
     )
     fun observeFolder(folder: Int): Flow<List<ConversationRow>>
 
+    /** One of the thread's rows (Inbox first): the sender, address and contact name are the same in each. */
     @Query(
         "SELECT c.*, cc.displayName AS displayName, cc.photoUri AS photoUri FROM conversations c " +
-            "LEFT JOIN contacts_cache cc ON cc.senderKey = c.senderKey WHERE c.threadId = :threadId",
+            "LEFT JOIN contacts_cache cc ON cc.senderKey = c.senderKey WHERE c.threadId = :threadId ORDER BY c.folder LIMIT 1",
     )
     fun observe(threadId: Long): Flow<ConversationRow?>
 
     @Query("SELECT * FROM conversations ORDER BY latestDate DESC")
     suspend fun all(): List<ConversationEntity>
 
-    @Query("SELECT threadId, folder FROM conversations")
-    suspend fun folders(): List<ThreadFolder>
-
     @Query("DELETE FROM conversations WHERE threadId IN (:ids)")
     suspend fun deleteThreads(ids: List<Long>)
 
-    @Query(PROJECTION_INSERT + PROJECTION_SELECT + " WHERE threadId IN (:ids) GROUP BY threadId) t" + PROJECTION_JOINS)
+    @Query(PROJECTION_INSERT + PROJECTION_SELECT + PROJECTION_THREADS + PROJECTION_GROUP + PROJECTION_JOINS)
     suspend fun insertProjection(ids: List<Long>)
 
     companion object {
         private const val PROJECTION_INSERT =
-            "INSERT OR REPLACE INTO conversations (threadId, senderKey, address, latestMessageId, latestDate, snippet, " +
-                "latestType, unreadCount, messageCount, folder, latestLabel) "
+            "INSERT OR REPLACE INTO conversations (threadId, folder, senderKey, address, latestMessageId, latestDate, snippet, " +
+                "latestType, unreadCount, messageCount, latestLabel) "
         private const val PROJECTION_SELECT =
-            "SELECT t.threadId, COALESCE(li.senderKey, lm.senderKey), COALESCE(li.address, lm.address), lm.id, lm.date, " +
-                "lm.body, lm.type, " +
-                "(SELECT COUNT(*) FROM messages u WHERE u.threadId = t.threadId AND u.type = 1 AND u.read = 0), t.cnt, " +
-                "CASE WHEN COALESCE(cl.effectiveLabel, 0) = 2 THEN 1 ELSE 0 END, COALESCE(cl.effectiveLabel, 0) " +
-                "FROM (SELECT threadId, COUNT(*) AS cnt FROM messages"
+            "SELECT t.threadId, t.folder, COALESCE(li.senderKey, lm.senderKey), COALESCE(li.address, lm.address), lm.id, lm.date, " +
+                "lm.body, lm.type, t.unread, t.cnt, COALESCE(cl.effectiveLabel, 0) " +
+                "FROM (SELECT m.threadId, " + FOLDER_OF + " AS folder, COUNT(*) AS cnt, SUM(m.type = 1 AND m.read = 0) AS unread " +
+                "FROM messages m LEFT JOIN classifications c ON c.messageId = m.id"
+        private const val PROJECTION_THREADS = " WHERE m.threadId IN (:ids)"
+        private const val PROJECTION_GROUP = " GROUP BY m.threadId, " + FOLDER_OF + ") t"
+        private const val LATEST_IN_FOLDER =
+            "SELECT m.id FROM messages m LEFT JOIN classifications c ON c.messageId = m.id WHERE m.threadId = t.threadId AND " +
+                FOLDER_OF + " = t.folder"
         private const val PROJECTION_JOINS =
-            " JOIN messages lm ON lm.id = (SELECT id FROM messages WHERE threadId = t.threadId ORDER BY date DESC, id DESC LIMIT 1)" +
-                " LEFT JOIN messages li ON li.id = (SELECT id FROM messages WHERE threadId = t.threadId AND type = 1 " +
-                "ORDER BY date DESC, id DESC LIMIT 1)" +
+            " JOIN messages lm ON lm.id = (" + LATEST_IN_FOLDER + " ORDER BY m.date DESC, m.id DESC LIMIT 1)" +
+                " LEFT JOIN messages li ON li.id = (" + LATEST_IN_FOLDER + " AND m.type = 1 ORDER BY m.date DESC, m.id DESC LIMIT 1)" +
                 " LEFT JOIN classifications cl ON cl.messageId = li.id"
     }
 }

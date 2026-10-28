@@ -106,10 +106,13 @@ class MessageRepository(
         return mirror(listOf(row), notify).firstOrNull()
     }
 
-    suspend fun markThreadRead(threadId: Long) {
-        withContext(Dispatchers.IO) { runCatching { gateway.markThreadRead(threadId) } }
+    /** Marks the unread incoming messages of [threadId] that are in [folder] read: opening that view of it. */
+    suspend fun markRead(threadId: Long, folder: Int) {
+        val ids = db.messages().unreadIdsIn(threadId, folder)
+        if (ids.isEmpty()) return
+        withContext(Dispatchers.IO) { runCatching { gateway.markRead(ids) } }
         db.withWriteTransaction {
-            if (db.messages().markThreadRead(threadId) > 0) projector.rebuild(listOf(threadId))
+            if (ids.chunked(500).sumOf { db.messages().markRead(it) } > 0) projector.rebuild(listOf(threadId))
         }
     }
 
@@ -128,15 +131,13 @@ class MessageRepository(
 
     suspend fun deleteMessages(ids: List<Long>) {
         if (ids.isEmpty()) return
-        withContext(Dispatchers.IO) { ids.forEach { gateway.deleteMessage(it) } }
+        withContext(Dispatchers.IO) { gateway.deleteMessages(ids) }
         removeLocal(ids)
     }
 
-    suspend fun deleteThreads(threadIds: List<Long>) {
-        for (threadId in threadIds) {
-            withContext(Dispatchers.IO) { gateway.deleteThreadSms(threadId) }
-            removeLocal(db.messages().idsInThread(threadId))
-        }
+    /** Deletes the messages of these threads that are in [folder]; the thread's messages in the other folder stay. */
+    suspend fun deleteFolder(threadIds: Collection<Long>, folder: Int) {
+        for (threadId in threadIds) deleteMessages(db.messages().idsIn(threadId, folder))
     }
 
     /** Drops Room rows (and their verdicts and cached embeddings) for messages gone from the provider. */

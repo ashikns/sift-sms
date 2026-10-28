@@ -33,7 +33,7 @@ class FolderAndRescoreTest {
     }
 
     @Test
-    fun `rescan summary counts conversations that changed folders`() {
+    fun `rescan summary counts messages that changed folders`() {
         val before = mapOf(1L to Folder.INBOX, 2L to Folder.SPAM, 3L to Folder.INBOX, 4L to Folder.SPAM)
         val after = mapOf(1L to Folder.SPAM, 2L to Folder.INBOX, 3L to Folder.INBOX, 5L to Folder.SPAM)
         assertEquals(FolderMoves(toSpam = 1, toInbox = 1), FolderMoves.between(before, after))

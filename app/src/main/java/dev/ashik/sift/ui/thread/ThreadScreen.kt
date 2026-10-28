@@ -74,11 +74,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.ashik.sift.R
+import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MsgStatus
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.ThreadMessageRow
 import dev.ashik.sift.data.db.UserLabelCode
+import dev.ashik.sift.notifications.ThreadView
 import dev.ashik.sift.spam.CueCodec
 import dev.ashik.sift.spamcore.Reason
 import dev.ashik.sift.spamcore.SenderKind
@@ -99,7 +101,7 @@ import kotlin.math.roundToInt
 fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     val graph = rememberGraph()
     val context = LocalContext.current
-    val vm = viewModel(key = "thread_${key.threadId}_${key.address}") { ThreadViewModel(graph, key) }
+    val vm = viewModel(key = "thread_${key.threadId}_${key.folder}_${key.address}") { ThreadViewModel(graph, key) }
     val conversation by vm.conversation.collectAsStateWithLifecycle()
     val messages by vm.messages.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -108,20 +110,21 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     var confirmDeleteThread by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val threadId = conversation?.conversation?.threadId ?: vm.currentThreadId
+    val view = threadId?.let { ThreadView(it, vm.folder) }
 
-    DisposableEffect(lifecycleOwner, threadId) {
+    DisposableEffect(lifecycleOwner, view) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> graph.visibleThread.threadId = threadId
-                Lifecycle.Event.ON_PAUSE -> if (graph.visibleThread.threadId == threadId) graph.visibleThread.threadId = null
+                Lifecycle.Event.ON_RESUME -> graph.visibleThread.view = view
+                Lifecycle.Event.ON_PAUSE -> if (graph.visibleThread.view == view) graph.visibleThread.view = null
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) graph.visibleThread.threadId = threadId
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) graph.visibleThread.view = view
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            if (graph.visibleThread.threadId == threadId) graph.visibleThread.threadId = null
+            if (graph.visibleThread.view == view) graph.visibleThread.view = null
         }
     }
     LaunchedEffect(messages) { messages?.let(vm::markReadIfNeeded) }
@@ -170,7 +173,7 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
                                     },
                                 )
                             }
-                            if (conv != null) {
+                            if (messages?.isNotEmpty() == true) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.action_delete_conversation)) },
                                     onClick = { menu = false; confirmDeleteThread = true },
@@ -185,10 +188,16 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     ) { padding ->
         val rows = messages.orEmpty()
         if (messages?.isEmpty() == true) {
-            // Opened from another app's sms: link to someone without a conversation; Sift can't start one.
+            val empty = when {
+                // Opened from another app's sms: link to someone without a conversation; Sift can't start one.
+                conv == null -> R.string.thread_empty
+                // Everything this tab showed moved to the other one (say, the only spam message was marked not spam).
+                vm.folder == Folder.SPAM -> R.string.thread_empty_spam
+                else -> R.string.thread_empty_inbox
+            }
             Box(Modifier.fillMaxSize().padding(padding).padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
-                    stringResource(R.string.thread_empty), style = MaterialTheme.typography.bodyLarge,
+                    stringResource(empty), style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                 )
             }

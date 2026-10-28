@@ -185,7 +185,7 @@ class BackfillClassifyWorker(context: Context, params: WorkerParameters) : Corou
         return true
     }
 
-    private suspend fun folders(graph: AppGraph) = graph.db.conversations().folders().associate { it.threadId to it.folder }
+    private suspend fun folders(graph: AppGraph) = graph.db.messages().incomingFolders().associate { it.id to it.folder }
 
     companion object {
         const val KEY_RESCAN = "rescan"

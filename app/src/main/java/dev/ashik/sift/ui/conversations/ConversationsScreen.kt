@@ -27,6 +27,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -59,15 +61,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.ashik.sift.R
 import dev.ashik.sift.data.db.ConversationRow
+import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.ui.components.Avatar
+import dev.ashik.sift.ui.components.FilterListIcon
 import dev.ashik.sift.ui.components.displayAddress
 import dev.ashik.sift.ui.components.rememberGraph
 import dev.ashik.sift.ui.components.shortTime
 
 @Composable
-fun ConversationsScreen(onOpenThread: (Long) -> Unit, onOpenSettings: () -> Unit) {
+fun ConversationsScreen(onOpenThread: (threadId: Long, folder: Int) -> Unit, onOpenSettings: () -> Unit) {
     val graph = rememberGraph()
     val context = LocalContext.current
     val vm = viewModel { ConversationsViewModel(graph, context.applicationContext) }
@@ -77,7 +81,7 @@ fun ConversationsScreen(onOpenThread: (Long) -> Unit, onOpenSettings: () -> Unit
     ConversationsContent(
         inbox = inbox, spam = spam, scan = scan,
         onOpenThread = onOpenThread, onOpenSettings = onOpenSettings,
-        onDelete = { vm.delete(it) },
+        onDelete = vm::delete,
     )
 }
 
@@ -87,16 +91,20 @@ fun ConversationsContent(
     inbox: List<ConversationRow>?,
     spam: List<ConversationRow>?,
     scan: ScanProgress?,
-    onOpenThread: (Long) -> Unit,
+    onOpenThread: (threadId: Long, folder: Int) -> Unit,
     onOpenSettings: () -> Unit,
-    onDelete: (Set<Long>) -> Unit,
+    onDelete: (threadIds: Set<Long>, folder: Int) -> Unit,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Kept while Sift is open (into a conversation and back), not across launches.
+    var unreadOnly by rememberSaveable { mutableStateOf(false) }
     var selection by remember { mutableStateOf(emptySet<Long>()) }
     var confirmDelete by remember { mutableStateOf(false) }
     BackHandler(enabled = selection.isNotEmpty()) { selection = emptySet() }
-    val rows = if (tab == 0) inbox else spam
     val inSpam = tab == 1
+    val folder = if (inSpam) Folder.SPAM else Folder.INBOX
+    val all = if (inSpam) spam else inbox
+    val rows = if (unreadOnly) all?.filter { it.conversation.unreadCount > 0 } else all
     // One list state per tab. A LazyColumn with stable keys keeps its first visible item in place when a new
     // conversation is inserted above it, so a new message would land just off-screen; follow it if we were at the top.
     val inboxState = rememberLazyListState()
@@ -113,6 +121,14 @@ fun ConversationsContent(
                 TopAppBar(
                     title = { Text(stringResource(R.string.app_name)) },
                     actions = {
+                        IconToggleButton(
+                            checked = unreadOnly, onCheckedChange = { unreadOnly = it },
+                            colors = IconButtonDefaults.iconToggleButtonColors(
+                                checkedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                checkedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            ),
+                            modifier = Modifier.testTag("filter_unread"),
+                        ) { Icon(FilterListIcon, stringResource(R.string.filter_unread_only)) }
                         IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
                     },
                 )
@@ -135,12 +151,12 @@ fun ConversationsContent(
             PrimaryTabRow(selectedTabIndex = tab) {
                 Tab(
                     selected = tab == 0, onClick = { tab = 0; selection = emptySet() },
-                    text = { TabLabel(stringResource(R.string.tab_inbox), inbox?.count { it.conversation.unreadCount > 0 } ?: 0) },
+                    text = { TabLabel(stringResource(R.string.tab_inbox), inbox.unreadConversations()) },
                     modifier = Modifier.testTag("tab_inbox"),
                 )
                 Tab(
                     selected = tab == 1, onClick = { tab = 1; selection = emptySet() },
-                    text = { TabLabel(stringResource(R.string.tab_spam), spam?.size ?: 0) },
+                    text = { TabLabel(stringResource(R.string.tab_spam), spam.unreadConversations()) },
                     modifier = Modifier.testTag("tab_spam"),
                 )
             }
@@ -154,7 +170,13 @@ fun ConversationsContent(
                 rows == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 rows.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        stringResource(if (inSpam) R.string.empty_spam else R.string.empty_inbox),
+                        stringResource(
+                            when {
+                                unreadOnly -> R.string.empty_unread
+                                inSpam -> R.string.empty_spam
+                                else -> R.string.empty_inbox
+                            },
+                        ),
                         style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -165,7 +187,7 @@ fun ConversationsContent(
                             row = row,
                             selected = id in selection,
                             onClick = {
-                                if (selection.isNotEmpty()) selection = selection.toggle(id) else onOpenThread(id)
+                                if (selection.isNotEmpty()) selection = selection.toggle(id) else onOpenThread(id, folder)
                             },
                             onLongClick = { selection = selection.toggle(id) },
                         )
@@ -181,7 +203,7 @@ fun ConversationsContent(
             title = { Text(pluralStringResource(R.plurals.delete_conversations_title, selection.size, selection.size)) },
             text = { Text(stringResource(R.string.delete_conversations_text)) },
             confirmButton = {
-                TextButton(onClick = { onDelete(selection); selection = emptySet(); confirmDelete = false }) {
+                TextButton(onClick = { onDelete(selection, folder); selection = emptySet(); confirmDelete = false }) {
                     Text(stringResource(R.string.action_delete))
                 }
             },
@@ -191,6 +213,8 @@ fun ConversationsContent(
 }
 
 private fun Set<Long>.toggle(id: Long) = if (id in this) this - id else this + id
+
+private fun List<ConversationRow>?.unreadConversations() = this?.count { it.conversation.unreadCount > 0 } ?: 0
 
 @Composable
 private fun TabLabel(text: String, count: Int) {
@@ -233,7 +257,7 @@ fun ConversationItem(row: ConversationRow, selected: Boolean, onClick: () -> Uni
                     snippet, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
                 )
-                if (c.latestLabel == LabelCode.SUSPICIOUS && c.folder == 0) {
+                if (c.latestLabel == LabelCode.SUSPICIOUS) {
                     SuggestionChip(onClick = onClick, label = { Text(stringResource(R.string.possible_spam)) })
                 }
             }

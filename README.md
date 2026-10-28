@@ -8,6 +8,11 @@ your messages and what it learns never leave the phone.
 Sift only receives: it can't send or reply (it doesn't even hold the SEND_SMS permission). Links in messages are
 plain text, never clickable; long-press a message to select and copy all or part of it.
 
+Messages are sorted into the Inbox and Spam tabs one by one, not by conversation: a sender whose thread holds both
+(a bank's card alerts and its promos) shows in both tabs, each with only its own messages, latest message and unread
+count, and both tabs' badges count conversations with unread messages. The filter button next to Settings shows only
+unread conversations (until Sift is closed). Deleting a conversation from a tab deletes only its messages in that tab.
+
 ## How the spam filter works
 
 1. **Normalize.** Obfuscation tricks are undone before anything else: invisible characters are removed, and
@@ -43,8 +48,9 @@ plain text, never clickable; long-press a message to select and copy all or part
    - Then the open conversation is re-checked with the new model first ("Re-checking now…" shows until it's done),
      then every other message, however old; the progress shows in the notification shade.
    - A message whose label the model changes (in a re-check, a rescan, or after you delete its learning entry)
-     becomes unread, so its conversation stands out until you open it; opening a conversation is the only way to mark
-     it read. Your own marks don't make a message unread.
+     becomes unread, so its conversation stands out in the tab the message is in now, until you open it there.
+     Opening a conversation is the only way to mark messages read, and it marks only those shown in that tab. Your
+     own marks don't make a message unread.
    - Deleting an entry under Settings → Learning entries removes that mark: Sift forgets it, retrains, and judges the
      message again on its own.
    - The embedding weights, message-feature weights and sender signals (type, category suffix) stay fixed. That way a

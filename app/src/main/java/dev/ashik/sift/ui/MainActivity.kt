@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation3.runtime.NavKey
 import dev.ashik.sift.SiftApp
+import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.ui.navigation.ThreadKey
 import dev.ashik.sift.ui.theme.SiftTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,20 +47,22 @@ class MainActivity : ComponentActivity() {
         intent ?: return null
         val data = intent.data
         return when {
-            data?.scheme == "sift" && data.host == "thread" ->
-                data.lastPathSegment?.toLongOrNull()?.let { ThreadKey(it) }
+            data?.scheme == "sift" && data.host == "thread" -> data.lastPathSegment?.toLongOrNull()?.let {
+                ThreadKey(it, folder = data.getQueryParameter("folder")?.toIntOrNull() ?: Folder.INBOX)
+            }
             // Another app asking to text someone: Sift doesn't send, so this opens the conversation with them.
             (intent.action == Intent.ACTION_SENDTO || intent.action == Intent.ACTION_VIEW) &&
                 data?.scheme in setOf("sms", "smsto", "mms", "mmsto") -> {
                 val address = data?.schemeSpecificPart?.substringBefore('?')?.split(',', ';')?.firstOrNull()?.trim()
-                if (address.isNullOrEmpty()) null else ThreadKey(0, address)
+                if (address.isNullOrEmpty()) null else ThreadKey(0, address = address)
             }
             else -> null
         }
     }
 
     companion object {
-        fun threadIntent(context: Context, threadId: Long): Intent =
-            Intent(Intent.ACTION_VIEW, Uri.parse("sift://thread/$threadId"), context, MainActivity::class.java)
+        /** Opens the thread as the [folder] tab shows it. */
+        fun threadIntent(context: Context, threadId: Long, folder: Int): Intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("sift://thread/$threadId?folder=$folder"), context, MainActivity::class.java)
     }
 }

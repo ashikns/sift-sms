@@ -34,8 +34,9 @@ class ConversationsViewModel(private val graph: AppGraph, context: Context) : Vi
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    fun delete(threadIds: Set<Long>) = viewModelScope.launch {
-        threadIds.forEach(graph.notifier::cancelThread)
-        runCatching { graph.repository.deleteThreads(threadIds.toList()) }
+    /** Deletes these conversations' messages in [folder]: what that tab shows of them. */
+    fun delete(threadIds: Set<Long>, folder: Int) = viewModelScope.launch {
+        threadIds.forEach { graph.notifier.cancel(it, folder) }
+        runCatching { graph.repository.deleteFolder(threadIds, folder) }
     }
 }

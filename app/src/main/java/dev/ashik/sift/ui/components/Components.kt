@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.materialIcon
+import androidx.compose.material.icons.materialPath
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -23,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +40,17 @@ import java.util.Locale
 
 @Composable
 fun rememberGraph(): AppGraph = (LocalContext.current.applicationContext as SiftApp).graph
+
+/** Material's "filter list" icon, which the core icon set doesn't include. */
+val FilterListIcon: ImageVector by lazy {
+    materialIcon(name = "Filled.FilterList") {
+        materialPath {
+            moveTo(10f, 18f); horizontalLineToRelative(4f); verticalLineToRelative(-2f); horizontalLineToRelative(-4f); close()
+            moveTo(3f, 6f); verticalLineToRelative(2f); horizontalLineToRelative(18f); verticalLineToRelative(-2f); close()
+            moveTo(6f, 13f); horizontalLineToRelative(12f); verticalLineToRelative(-2f); horizontalLineToRelative(-12f); close()
+        }
+    }
+}
 
 fun displayAddress(address: String): String =
     PhoneNumberUtils.formatNumber(address, Locale.getDefault().country.ifEmpty { "US" }) ?: address

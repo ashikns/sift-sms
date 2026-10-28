@@ -122,15 +122,15 @@ object FolderPolicy {
     }
 }
 
-/** Conversations a rescan moved between Inbox and Spam (ones that appeared or disappeared meanwhile don't count). */
+/** Messages a rescan moved between Inbox and Spam (ones that appeared or disappeared meanwhile don't count). */
 data class FolderMoves(val toSpam: Int, val toInbox: Int) {
     companion object {
-        /** [before] and [after] map thread ids to folders. */
+        /** [before] and [after] map message ids to folders. */
         fun between(before: Map<Long, Int>, after: Map<Long, Int>): FolderMoves {
             var toSpam = 0
             var toInbox = 0
-            for ((threadId, was) in before) {
-                val now = after[threadId] ?: continue
+            for ((messageId, was) in before) {
+                val now = after[messageId] ?: continue
                 if (now != was) if (now == dev.ashik.sift.data.db.Folder.SPAM) toSpam++ else toInbox++
             }
             return FolderMoves(toSpam, toInbox)

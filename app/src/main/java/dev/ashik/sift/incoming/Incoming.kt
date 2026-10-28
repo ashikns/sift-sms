@@ -9,6 +9,7 @@ import android.util.Log
 import dev.ashik.sift.data.db.AppDatabase
 import dev.ashik.sift.data.db.ClassState
 import dev.ashik.sift.data.db.ClassificationEntity
+import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MessageEntity
 import dev.ashik.sift.data.repo.MessageRepository
@@ -107,9 +108,11 @@ class IncomingSmsHandler(
         postArrival(message, applied?.effectiveLabel ?: LabelCode.HAM)
     }
 
+    /** Marks [m] read if its thread is open in the tab it landed in; otherwise notifies (spam only on request). */
     private suspend fun postArrival(m: MessageEntity, label: Int) {
-        if (visible.isVisible(m.threadId)) {
-            repository.markThreadRead(m.threadId)
+        val folder = if (label == LabelCode.SPAM) Folder.SPAM else Folder.INBOX
+        if (visible.isVisible(m.threadId, folder)) {
+            repository.markRead(m.threadId, folder)
         } else if (label == LabelCode.SPAM) {
             if (settings.current().spamNotifications) notifier.notifySpam(m.threadId)
         } else {

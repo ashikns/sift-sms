@@ -18,18 +18,22 @@ import androidx.core.graphics.drawable.IconCompat
 import androidx.work.WorkManager
 import dev.ashik.sift.R
 import dev.ashik.sift.data.db.AppDatabase
+import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.spam.FolderMoves
 import dev.ashik.sift.ui.MainActivity
 import kotlinx.coroutines.flow.first
 import java.util.Locale
 import java.util.UUID
 
-/** The thread the user is looking at right now (set by the thread screen while resumed). */
+/** A thread as one tab shows it: only its messages in [folder]. */
+data class ThreadView(val threadId: Long, val folder: Int)
+
+/** The thread view the user is looking at right now (set by the thread screen while resumed). */
 class VisibleThreadTracker {
     @Volatile
-    var threadId: Long? = null
+    var view: ThreadView? = null
 
-    fun isVisible(threadId: Long) = this.threadId == threadId
+    fun isVisible(threadId: Long, folder: Int) = view == ThreadView(threadId, folder)
 }
 
 object Channels {
@@ -53,7 +57,7 @@ class ConversationShortcuts(private val context: Context) {
             .setLocusId(LocusIdCompat(id))
             .setIcon(IconCompat.createWithResource(context, R.drawable.ic_shortcut_person))
             .setCategories(setOf(ShortcutInfo.SHORTCUT_CATEGORY_CONVERSATION))
-            .setIntent(MainActivity.threadIntent(context, threadId))
+            .setIntent(MainActivity.threadIntent(context, threadId, Folder.INBOX))
             .build()
         runCatching { ShortcutManagerCompat.pushDynamicShortcut(context, info) }
         return id
@@ -110,7 +114,7 @@ class MessageNotifier(
             .setShortcutId(shortcutId)
             .setLocusId(LocusIdCompat(shortcutId))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setContentIntent(openThread(threadId))
+            .setContentIntent(openThread(threadId, Folder.INBOX))
             .setAutoCancel(true)
             .setOnlyAlertOnce(!alert)
             .setWhen(unread.last().date)
@@ -128,7 +132,7 @@ class MessageNotifier(
             .setSmallIcon(R.drawable.ic_stat_message)
             .setContentTitle(context.getString(R.string.notification_spam_title))
             .setContentText(context.getString(R.string.notification_spam_text, name))
-            .setContentIntent(openThread(threadId))
+            .setContentIntent(openThread(threadId, Folder.SPAM))
             .setAutoCancel(true)
             .setSilent(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -149,6 +153,9 @@ class MessageNotifier(
         manager.cancel(TAG_THREAD, threadId.toInt())
         manager.cancel(TAG_SPAM, threadId.toInt())
     }
+
+    /** Cancels the notification about the thread's messages in [folder]: its messages one, or its spam notice. */
+    fun cancel(threadId: Long, folder: Int) = manager.cancel(if (folder == Folder.SPAM) TAG_SPAM else TAG_THREAD, threadId.toInt())
 
     /**
      * Id of a rescan's or re-check's progress notice: untagged, like a foreground-service notification, and one per work
@@ -219,8 +226,8 @@ class MessageNotifier(
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
-    private fun openThread(threadId: Long): PendingIntent = PendingIntent.getActivity(
-        context, threadId.toInt(), MainActivity.threadIntent(context, threadId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+    private fun openThread(threadId: Long, folder: Int): PendingIntent = PendingIntent.getActivity(
+        context, threadId.toInt(), MainActivity.threadIntent(context, threadId, folder).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 

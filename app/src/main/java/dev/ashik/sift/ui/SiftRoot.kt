@@ -62,7 +62,7 @@ fun SiftRoot(pendingDestination: StateFlow<NavKey?>, onDestinationConsumed: () -
         entryProvider = entryProvider {
             entry<ConversationsKey> {
                 ConversationsScreen(
-                    onOpenThread = { backStack.add(ThreadKey(it)) },
+                    onOpenThread = { threadId, folder -> backStack.add(ThreadKey(threadId, folder)) },
                     onOpenSettings = { backStack.add(SettingsKey) },
                 )
             }

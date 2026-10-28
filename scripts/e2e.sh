@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end checks on the emulator: real SMS delivery (adb emu sms send), spam placement, notifications,
-# multipart, learning from feedback, the learning entries page, a rescan of all history, the re-check after a
+# one sender in both tabs, multipart, learning from feedback, the learning entries page, a rescan of all history, the re-check after a
 # retrain, role loss + reconcile, Doze. Emulator only.
 #
 #   scripts/emulator.sh          # boot the AVD (once)
@@ -35,6 +35,8 @@ conversations() { $A shell content query --uri "$DBG/conversations" 2>/dev/null 
 messages() { $A shell content query --uri "$DBG/messages" 2>/dev/null | tr -d '\r'; }
 field() { grep -oE "(^|[ ,])$1=[^,]*" | head -1 | sed -E "s/^[ ,]?$1=//"; }
 conv_field() { conversations | grep -F "address=$1," | head -1 | field "$2"; }
+# conv_in <address> <folder> <field>: the field of the conversation's row in that tab.
+conv_in() { conversations | grep -F "address=$1," | grep -F "folder=$2," | head -1 | field "$3"; }
 msg_field() { messages | grep -F "address=$1," | head -1 | field "$2"; }
 # Capture first, then match: `grep -q` exiting early would SIGPIPE adb and fail the pipeline under pipefail.
 notified() { local d; d=$($A shell dumpsys notification --noredact 2>/dev/null | tr -d '\r' | grep -A60 "pkg=$PKG"); [[ "$d" == *"$1"* ]]; }
@@ -100,6 +102,20 @@ wait_until 15 folder_is "$(num 1)" 0 && pass "ham landed in Inbox" || fail "ham 
 wait_until 15 folder_is "$(num 2)" 1 && pass "spam landed in Spam" || fail "spam folder=$(conv_field "$(num 2)" folder)"
 wait_until 5 notified "$HAM" && pass "ham notified" || fail "no notification for ham"
 notified "$SPAM" && fail "spam was notified" || pass "spam not notified"
+
+step "One sender, both tabs"
+# One thread with a needed message and a scam: each tab shows only its own message, and opening the thread in one tab
+# marks only that tab's message read.
+send_sms "$(num 9)" "$HAM"
+send_sms "$(num 9)" "$SPAM"
+both_tabs() { [[ "$(conv_in "$(num 9)" 0 unreadCount)" == "1" && "$(conv_in "$(num 9)" 1 unreadCount)" == "1" ]]; }
+wait_until 15 both_tabs && pass "the thread is in both tabs with one unread message each" \
+  || fail "Inbox unread=$(conv_in "$(num 9)" 0 unreadCount) Spam unread=$(conv_in "$(num 9)" 1 unreadCount)"
+$A shell am start -W -a android.intent.action.VIEW -d "'sift://thread/$(conv_in "$(num 9)" 1 threadId)?folder=1'" -n "$PKG/.ui.MainActivity" >/dev/null
+spam_view_read() { [[ "$(conv_in "$(num 9)" 1 unreadCount)" == "0" ]]; }
+wait_until 10 spam_view_read && pass "opening its Spam view marks the scam read" || fail "Spam unread=$(conv_in "$(num 9)" 1 unreadCount)"
+[[ "$(conv_in "$(num 9)" 0 unreadCount)" == "1" ]] && pass "its Inbox message stays unread" || fail "Inbox unread=$(conv_in "$(num 9)" 0 unreadCount)"
+$A shell input keyevent KEYCODE_HOME
 
 step "Multipart"
 LONG=$(printf 'Long message %s part ' "$RUN"; for i in $(seq 1 40); do printf 'word%02d ' "$i"; done)

@@ -53,10 +53,14 @@ data class ClassificationEntity(
     val classifiedAt: Long? = null,
 )
 
-/** One row per thread, rebuilt by the projector whenever the thread's messages or verdicts change. */
-@Entity(tableName = "conversations", indices = [Index(value = ["folder", "latestDate"])])
+/**
+ * One row per thread and [Folder] the thread has messages in, built from those messages only. Rebuilt by the projector
+ * whenever the thread's messages or verdicts change.
+ */
+@Entity(tableName = "conversations", primaryKeys = ["threadId", "folder"], indices = [Index(value = ["folder", "latestDate"])])
 data class ConversationEntity(
-    @PrimaryKey val threadId: Long,
+    val threadId: Long,
+    val folder: Int,
     val senderKey: String,
     val address: String,
     val latestMessageId: Long,
@@ -65,8 +69,7 @@ data class ConversationEntity(
     val latestType: Int,
     val unreadCount: Int,
     val messageCount: Int,
-    val folder: Int,
-    /** Effective label of the latest incoming message (drives the "Possible spam" badge). */
+    /** Effective label of the folder's latest incoming message (drives the "Possible spam" badge). */
     val latestLabel: Int,
 )
 
@@ -150,7 +153,7 @@ data class MessageKey(
     val missingSince: Long?,
 )
 
-data class ThreadFolder(val threadId: Long, val folder: Int)
+data class MessageFolder(val id: Long, val folder: Int)
 
 /** A learning entry as the review screen lists it: no embedding, plus the sender's contact name if any. */
 data class LearningEntryRow(

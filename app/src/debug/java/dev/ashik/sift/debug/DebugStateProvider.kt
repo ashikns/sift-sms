@@ -84,7 +84,7 @@ class DebugStateProvider : ContentProvider() {
                         out.putBoolean("marked", graph.feedback.markMessages(listOf(arg!!.toLong()), label) != null)
                     }
                     // A baseline for checks of what the model marks unread (in the app only opening a thread marks it read).
-                    "markAllRead" -> graph.db.conversations().all().filter { it.unreadCount > 0 }.forEach { graph.repository.markThreadRead(it.threadId) }
+                    "markAllRead" -> graph.db.conversations().all().filter { it.unreadCount > 0 }.forEach { graph.repository.markRead(it.threadId, it.folder) }
                     "forgetLearning" -> {
                         graph.feedback.forgetLearned(arg?.let { listOf(it.toLong()) } ?: graph.db.trainingExamples().all().map { it.messageId })
                         graph.engine.awaitIdle()

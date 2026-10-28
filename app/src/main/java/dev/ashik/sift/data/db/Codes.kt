@@ -35,6 +35,11 @@ object UserLabelCode {
     fun toUserLabel(code: Int) = UserLabel.entries.getOrElse(code) { UserLabel.HAM }
 }
 
+/**
+ * The tab a message shows in: Spam for an incoming message whose effective label is Spam, Inbox for everything else
+ * (not spam, possible spam, not yet judged, outgoing). A conversation with both kinds shows in both tabs, each with only
+ * its own messages. SQL: [FOLDER_OF].
+ */
 object Folder {
     const val INBOX = 0
     const val SPAM = 1

@@ -10,9 +10,9 @@ import dev.ashik.sift.data.db.FeedbackEventEntity
 import dev.ashik.sift.data.db.Folder
 import dev.ashik.sift.data.db.LabelCode
 import dev.ashik.sift.data.db.MessageEntity
+import dev.ashik.sift.data.db.MessageFolder
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.Source
-import dev.ashik.sift.data.db.ThreadFolder
 import dev.ashik.sift.data.db.TrainingExampleEntity
 import dev.ashik.sift.data.repo.ConversationProjector
 import dev.ashik.sift.data.repo.MessageMapping
@@ -39,13 +39,14 @@ class DatabaseTest {
     @After
     fun tearDown() = db.close()
 
-    private suspend fun conversation(threadId: Long) = db.conversations().observe(threadId).first()!!.conversation
+    private suspend fun conversation(threadId: Long, folder: Int) =
+        db.conversations().all().singleOrNull { it.threadId == threadId && it.folder == folder }
 
     private fun msg(id: Long, thread: Long, type: Int, date: Long, read: Boolean = true, sender: String = "+16505550001", kind: String = "PHONE") =
         MessageEntity(id, thread, sender, sender, kind, "m$id", date, type, -1, read, id, 0)
 
     @Test
-    fun projectorPlacesConversationsByLatestIncomingMessage() = runBlocking {
+    fun projectorSplitsThreadsByFolder() = runBlocking {
         db.messages().upsertAll(
             listOf(
                 msg(1, 10, MsgType.INBOX, 1000, read = false),
@@ -64,35 +65,48 @@ class DatabaseTest {
         )
         projector.rebuild(listOf(10L, 20L, 30L))
 
-        val c10 = conversation(10)
-        assertEquals(Folder.INBOX, c10.folder)
+        // Outgoing messages are in Inbox with the thread's incoming non-spam ones.
+        val c10 = conversation(10, Folder.INBOX)!!
         assertEquals(2L, c10.latestMessageId)
         assertEquals(MsgType.SENT, c10.latestType)
         assertEquals(1, c10.unreadCount)
         assertEquals(2, c10.messageCount)
+        assertEquals(null, conversation(10, Folder.SPAM))
 
-        val c20 = conversation(20)
-        assertEquals(Folder.SPAM, c20.folder)
-        assertEquals(LabelCode.SPAM, c20.latestLabel)
+        // One sender, both tabs: each row has only its own messages, latest message and unread count.
+        val inbox20 = conversation(20, Folder.INBOX)!!
+        assertEquals(3L, inbox20.latestMessageId)
+        assertEquals(0, inbox20.unreadCount)
+        assertEquals(1, inbox20.messageCount)
+        assertEquals(LabelCode.HAM, inbox20.latestLabel)
+        val spam20 = conversation(20, Folder.SPAM)!!
+        assertEquals(4L, spam20.latestMessageId)
+        assertEquals("m4", spam20.snippet)
+        assertEquals(1, spam20.unreadCount)
+        assertEquals(1, spam20.messageCount)
+        assertEquals(LabelCode.SPAM, spam20.latestLabel)
 
-        val c30 = conversation(30)
-        assertEquals(Folder.INBOX, c30.folder)
-        assertEquals(LabelCode.SUSPICIOUS, c30.latestLabel)
+        assertEquals(LabelCode.SUSPICIOUS, conversation(30, Folder.INBOX)!!.latestLabel)
+        assertEquals(listOf(10L, 20L, 30L), db.conversations().observeFolder(Folder.INBOX).first().map { it.conversation.threadId }.sorted())
+        assertEquals(listOf(20L), db.conversations().observeFolder(Folder.SPAM).first().map { it.conversation.threadId })
 
-        // The user's "not spam" wins over the engine and moves the conversation back.
+        // The user's "not spam" wins over the engine and moves the message back: the thread leaves Spam.
         db.classifications().upsert(
             db.classifications().get(4)!!.copy(userLabel = UserLabel.HAM.ordinal, userLabeledAt = 3000, effectiveLabel = LabelCode.HAM, effectiveSource = Source.USER),
         )
         projector.rebuild(listOf(20L))
-        assertEquals(Folder.INBOX, conversation(20).folder)
-        assertEquals(listOf(10L, 20L, 30L), db.conversations().observeFolder(Folder.INBOX).first().map { it.conversation.threadId }.sorted())
+        assertEquals(null, conversation(20, Folder.SPAM))
+        val back = conversation(20, Folder.INBOX)!!
+        assertEquals(4L, back.latestMessageId)
+        assertEquals(1, back.unreadCount)
+        assertEquals(2, back.messageCount)
     }
 
     @Test
     fun markUnreadUpdatesTheMirrorAndTheUnreadCount() = runBlocking {
         db.messages().upsertAll(listOf(msg(1, 10, MsgType.INBOX, 1000), msg(2, 10, MsgType.INBOX, 2000, read = false)))
         projector.rebuild(listOf(10L))
-        assertEquals(1, conversation(10).unreadCount)
+        assertEquals(1, conversation(10, Folder.INBOX)!!.unreadCount)
 
         val hash = MessageMapping.mutableHash(MsgType.INBOX, false, -1, 10)
         assertEquals(1, db.messages().markUnread(1, hash))
@@ -101,18 +115,52 @@ class DatabaseTest {
         assertEquals(false, m.read)
         assertEquals(hash, m.mutableHash)
         projector.rebuild(listOf(10L))
-        assertEquals(2, conversation(10).unreadCount)
+        assertEquals(2, conversation(10, Folder.INBOX)!!.unreadCount)
+    }
+
+    @Test
+    fun aViewShowsAndMarksReadOnlyItsFolder() = runBlocking {
+        db.messages().upsertAll(
+            listOf(
+                msg(1, 10, MsgType.INBOX, 1000, read = false),
+                msg(2, 10, MsgType.INBOX, 2000, read = false),
+                msg(3, 10, MsgType.SENT, 3000),
+                msg(4, 10, MsgType.INBOX, 4000, read = false),
+            ),
+        )
+        db.classifications().upsertAll(
+            listOf(
+                ClassificationEntity(2, ClassState.DONE, effectiveLabel = LabelCode.SPAM, effectiveSource = Source.ENGINE),
+                ClassificationEntity(4, ClassState.DONE, effectiveLabel = LabelCode.SUSPICIOUS, effectiveSource = Source.ENGINE),
+            ),
+        )
+        projector.rebuild(listOf(10L))
+        assertEquals(listOf(2L), db.messages().observeThread(10, Folder.SPAM).first().map { it.id })
+        assertEquals(listOf(4L, 3L, 1L), db.messages().observeThread(10, Folder.INBOX).first().map { it.id })
+        assertEquals(listOf(2L), db.messages().idsIn(10, Folder.SPAM))
+
+        // Opening the Spam view marks only the spam message read; the Inbox row stays unread.
+        val spamUnread = db.messages().unreadIdsIn(10, Folder.SPAM)
+        assertEquals(listOf(2L), spamUnread)
+        assertEquals(1, db.messages().markRead(spamUnread))
+        projector.rebuild(listOf(10L))
+        assertEquals(0, conversation(10, Folder.SPAM)!!.unreadCount)
+        assertEquals(2, conversation(10, Folder.INBOX)!!.unreadCount)
+        assertEquals(listOf(1L, 4L), db.messages().unreadIdsIn(10, Folder.INBOX).sorted())
+        assertEquals(0, db.messages().markRead(spamUnread)) // already read
     }
 
     @Test
     fun threadQueryJoinsVerdictsNewestFirst() = runBlocking {
         db.messages().upsertAll(listOf(msg(1, 10, MsgType.INBOX, 1000), msg(2, 10, MsgType.SENT, 2000), msg(3, 10, MsgType.INBOX, 3000)))
         db.classifications().upsert(ClassificationEntity(3, ClassState.DONE, modelScore = 0.97f, reason = "MODEL", effectiveLabel = LabelCode.SPAM))
-        val rows = db.messages().observeThread(10).first()
-        assertEquals(listOf(3L, 2L, 1L), rows.map { it.id })
-        assertEquals(LabelCode.SPAM, rows[0].effectiveLabel)
-        assertEquals(0.97f, rows[0].modelScore!!, 1e-6f)
-        assertEquals(LabelCode.HAM, rows[2].effectiveLabel) // no verdict yet: not spam
+        val spam = db.messages().observeThread(10, Folder.SPAM).first().single()
+        assertEquals(3L, spam.id)
+        assertEquals(LabelCode.SPAM, spam.effectiveLabel)
+        assertEquals(0.97f, spam.modelScore!!, 1e-6f)
+        val inbox = db.messages().observeThread(10, Folder.INBOX).first()
+        assertEquals(listOf(2L, 1L), inbox.map { it.id })
+        assertEquals(LabelCode.HAM, inbox[1].effectiveLabel) // no verdict yet: not spam
     }
 
     @Test
@@ -141,8 +189,11 @@ class DatabaseTest {
         assertEquals(3, db.messages().rescanCount())
         assertEquals(listOf(2L, 1L), db.messages().rescanRemainingIds(startedAt = 500))
         assertEquals(listOf(3L, 2L, 1L), db.messages().rescanRemainingIds(startedAt = 1000))
-        projector.rebuild(listOf(10L))
-        assertEquals(listOf(ThreadFolder(10, Folder.SPAM)), db.conversations().folders())
+        assertEquals(
+            listOf(MessageFolder(1, Folder.INBOX), MessageFolder(2, Folder.INBOX), MessageFolder(3, Folder.INBOX),
+                MessageFolder(4, Folder.INBOX), MessageFolder(5, Folder.SPAM)),
+            db.messages().incomingFolders().sortedBy { it.id },
+        )
     }
 
     @Test

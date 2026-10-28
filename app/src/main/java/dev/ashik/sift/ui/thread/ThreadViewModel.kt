@@ -24,12 +24,15 @@ import kotlinx.coroutines.launch
 class ThreadViewModel(private val graph: AppGraph, key: ThreadKey) : ViewModel() {
     private val threadId = MutableStateFlow(key.threadId.takeIf { it > 0 })
 
+    /** The tab this view of the thread belongs to: it shows, marks read and deletes only the messages in it. */
+    val folder = key.folder
+
     val conversation: StateFlow<ConversationRow?> = threadId
         .flatMapLatest { id -> if (id == null) flowOf(null) else graph.db.conversations().observe(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val messages: StateFlow<List<ThreadMessageRow>?> = threadId
-        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else graph.db.messages().observeThread(id) }
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else graph.db.messages().observeThread(id, folder) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** For each mark, the job that re-checks this thread with the retrained model. */
@@ -57,18 +60,19 @@ class ThreadViewModel(private val graph: AppGraph, key: ThreadKey) : ViewModel()
     fun deleteConversation(onDone: () -> Unit) {
         val id = threadId.value ?: return onDone()
         viewModelScope.launch {
-            graph.notifier.cancelThread(id)
-            runCatching { graph.repository.deleteThreads(listOf(id)) }
+            graph.notifier.cancel(id, folder)
+            runCatching { graph.repository.deleteFolder(listOf(id), folder) }
             onDone()
         }
     }
 
+    /** Marks the messages this view shows read; the thread's messages in the other tab keep their state. */
     fun markReadIfNeeded(rows: List<ThreadMessageRow>) {
         val id = threadId.value ?: return
         if (rows.any { it.type == MsgType.INBOX && !it.read }) {
             viewModelScope.launch {
-                graph.repository.markThreadRead(id)
-                graph.notifier.cancelThread(id)
+                graph.repository.markRead(id, folder)
+                graph.notifier.cancel(id, folder)
             }
         }
     }

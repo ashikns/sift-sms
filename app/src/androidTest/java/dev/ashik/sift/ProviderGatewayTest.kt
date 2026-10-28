@@ -38,12 +38,12 @@ class ProviderGatewayTest {
         assertFalse(row.read)
         assertTrue("provider assigns the thread", row.threadId > 0)
         assertEquals(id, gateway.findDuplicateIncoming("+16505559876", old, "gateway test"))
-        assertTrue(gateway.markThreadRead(row.threadId) >= 1)
+        assertEquals(1, gateway.markRead(listOf(id)))
         assertTrue(gateway.query(id)!!.read)
         assertEquals(1, gateway.markUnread(listOf(id)))
         assertFalse(gateway.query(id)!!.read)
         assertEquals(0, gateway.markUnread(listOf(id)))
-        assertEquals(1, gateway.deleteMessage(id))
+        assertEquals(1, gateway.deleteMessages(listOf(id)))
         assertNull(gateway.query(id))
     }
 }
