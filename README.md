@@ -10,8 +10,14 @@ plain text, never clickable; long-press a message to select and copy all or part
 
 Messages are sorted into the Inbox and Spam tabs one by one, not by conversation: a sender whose thread holds both
 (a bank's card alerts and its promos) shows in both tabs, each with only its own messages, latest message and unread
-count, and both tabs' badges count conversations with unread messages. The filter button next to Settings shows only
-unread conversations (until Sift is closed). Deleting a conversation from a tab deletes only its messages in that tab.
+count, and both tabs' badges count conversations with unread messages. The filter button between Search and Settings
+shows only unread conversations (until Sift is closed). Deleting a conversation from a tab deletes only its messages in
+that tab.
+
+Search narrows each tab to the conversations whose sender's name or number, or one of whose messages in that tab,
+matches, ignoring case, spaces and punctuation ("hdfc salary" finds "HDFC-Salary", "98765 43210" finds
+"+919876543210"). A conversation that matched by a message shows its newest matching one, and opening it scrolls to that
+message, with the match highlighted. The search stays while you go into a conversation and back, until you close it.
 
 ## How the spam filter works
 

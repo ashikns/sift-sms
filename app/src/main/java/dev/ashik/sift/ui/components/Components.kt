@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,11 +29,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.ashik.sift.SiftApp
 import dev.ashik.sift.di.AppGraph
+import dev.ashik.sift.ui.conversations.SearchText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -48,6 +53,23 @@ val FilterListIcon: ImageVector by lazy {
             moveTo(10f, 18f); horizontalLineToRelative(4f); verticalLineToRelative(-2f); horizontalLineToRelative(-4f); close()
             moveTo(3f, 6f); verticalLineToRelative(2f); horizontalLineToRelative(18f); verticalLineToRelative(-2f); close()
             moveTo(6f, 13f); horizontalLineToRelative(12f); verticalLineToRelative(-2f); horizontalLineToRelative(-12f); close()
+        }
+    }
+}
+
+/** [text] with each match of the search [query] highlighted (see [SearchText]). */
+@Composable
+fun highlighted(text: String, query: String?): AnnotatedString {
+    val style = SpanStyle(background = MaterialTheme.colorScheme.tertiaryContainer, color = MaterialTheme.colorScheme.onTertiaryContainer)
+    return remember(text, query, style) {
+        val ranges = SearchText.ranges(text, query)
+        if (ranges.isEmpty()) {
+            AnnotatedString(text)
+        } else {
+            buildAnnotatedString {
+                append(text)
+                ranges.forEach { addStyle(style, it.first, it.last + 1) }
+            }
         }
     }
 }

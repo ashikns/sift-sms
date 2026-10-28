@@ -155,6 +155,9 @@ data class MessageKey(
 
 data class MessageFolder(val id: Long, val folder: Int)
 
+/** A message's text and [Folder], for search. */
+data class SearchableMessage(val id: Long, val threadId: Long, val folder: Int, val body: String, val date: Long, val type: Int)
+
 /** A learning entry as the review screen lists it: no embedding, plus the sender's contact name if any. */
 data class LearningEntryRow(
     val messageId: Long,

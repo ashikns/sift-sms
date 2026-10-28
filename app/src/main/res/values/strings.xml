@@ -41,6 +41,11 @@
     <string name="empty_spam">No spam. Messages Sift filters out will show up here.</string>
     <string name="empty_unread">No unread conversations</string>
     <string name="filter_unread_only">Show unread only</string>
+    <string name="action_search">Search</string>
+    <string name="search_hint">Search messages and senders</string>
+    <string name="action_clear_search">Clear search</string>
+    <string name="action_close_search">Close search</string>
+    <string name="empty_search">No matches in this tab</string>
     <string name="scanning">Checking %1$,d of %2$,d messages for spam…</string>
     <string name="selected_count">%1$d selected</string>
     <string name="action_delete">Delete</string>

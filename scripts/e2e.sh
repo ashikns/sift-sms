@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end checks on the emulator: real SMS delivery (adb emu sms send), spam placement, notifications,
 # one sender in both tabs, multipart, learning from feedback, the learning entries page, a rescan of all history, the re-check after a
-# retrain, role loss + reconcile, Doze. Emulator only.
+# retrain, role loss + reconcile, Doze, search. Emulator only.
 #
 #   scripts/emulator.sh          # boot the AVD (once)
 #   scripts/e2e.sh               # build + install the debug app, run every scenario
@@ -278,6 +278,36 @@ DOZE="Doze check from Alex $RUN"
 send_sms "$(num 8)" "$DOZE"
 wait_until 5 notified "$DOZE" && pass "notification within 5 s while in Doze" || fail "no notification in Doze"
 $A shell dumpsys deviceidle unforce >/dev/null
+
+step "Search"
+# Spaces and punctuation don't count: "ab1234…" finds "AB-12 34-…", and the number finds its sender however it's spaced.
+FIND="My PNR is AB-12 34-$RUN"
+send_sms "$(num 10)" "$FIND"
+wait_until 15 folder_is "$(num 10)" 0 || fail "the message to find isn't in Inbox (folder=$(conv_field "$(num 10)" folder))"
+$A shell am start -W -f 0x10008000 -n "$PKG/.ui.MainActivity" >/dev/null # new, cleared task: start at the Inbox
+sleep 1
+$A shell input swipe 540 250 540 20 150 # the message's heads-up notification covers the top bar
+sleep 1
+ui_tap "Search" && sleep 1
+ui_has "Close search" || fail "Search didn't open the search bar"
+$A shell input text "ab1234$RUN" && sleep 1
+ui_has "ab1234$RUN" && ui_has "$FIND" && ! ui_has "$DOZE" && pass "\"ab1234$RUN\" finds \"AB-12 34-$RUN\" and only it" \
+  || fail "the search for ab1234$RUN didn't narrow the list to its message"
+ui_tap "$FIND" && sleep 1
+ui_has "More options" && ui_has "$FIND" && pass "the result opens its conversation" || fail "the result didn't open its conversation"
+found_read() { [[ "$(conv_in "$(num 10)" 0 unreadCount)" == "0" ]]; }
+wait_until 5 found_read && pass "opening the result marks it read" || fail "unread=$(conv_in "$(num 10)" 0 unreadCount)"
+$A shell input keyevent KEYCODE_BACK
+sleep 1
+ui_tap "Clear search" && sleep 1
+$A shell input text "650%s$RUN%s0010" && sleep 1
+ui_has "650 $RUN 0010" && ui_has "$FIND" && ! ui_has "$DOZE" && pass "\"650 $RUN 0010\" finds its sender" \
+  || fail "the search for the number didn't narrow the list"
+[[ "$($A shell dumpsys input_method)" == *"mInputShown=true"* ]] && $A shell input keyevent KEYCODE_BACK # the keyboard
+$A shell input keyevent KEYCODE_BACK
+sleep 1
+! ui_has "Close search" && ui_has "$DOZE" && pass "Back closes the search" || fail "Back didn't close the search"
+$A shell input keyevent KEYCODE_HOME
 
 step "Screenshots"
 $A shell am start -W -n "$PKG/.ui.MainActivity" >/dev/null

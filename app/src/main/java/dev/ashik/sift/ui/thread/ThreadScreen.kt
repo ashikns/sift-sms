@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.contextmenu.data.TextContextMenuKeys
 import androidx.compose.foundation.text.contextmenu.modifier.filterTextContextMenuComponents
@@ -55,7 +56,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -87,12 +90,14 @@ import dev.ashik.sift.spamcore.SenderKind
 import dev.ashik.sift.spamcore.UserLabel
 import dev.ashik.sift.ui.components.dayHeader
 import dev.ashik.sift.ui.components.displayAddress
+import dev.ashik.sift.ui.components.highlighted
 import dev.ashik.sift.ui.components.rememberGraph
 import dev.ashik.sift.ui.components.sameDay
 import dev.ashik.sift.ui.components.timeOfDay
 import dev.ashik.sift.ui.navigation.ThreadKey
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -128,6 +133,17 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
         }
     }
     LaunchedEffect(messages) { messages?.let(vm::markReadIfNeeded) }
+    val listState = rememberLazyListState()
+    // Opened from a search: show the message that matched once, a third of the way up from the bottom.
+    var showedMatch by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(messages) {
+        val target = key.messageId
+        if (target == null || showedMatch) return@LaunchedEffect
+        val item = messages?.let { itemIndexOf(it, target) } ?: return@LaunchedEffect
+        val height = snapshotFlow { listState.layoutInfo.viewportSize.height }.first { it > 0 }
+        listState.scrollToItem(item, -height / 3)
+        showedMatch = true
+    }
     val resources = LocalResources.current
     LaunchedEffect(vm) {
         // After a mark, "Re-checking now…" stays up until the retrained model has re-checked this thread; a newer mark
@@ -204,6 +220,7 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).testTag("message_list"),
+            state = listState,
             reverseLayout = true,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -215,10 +232,10 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
                         onWhy = { why = m },
                         onMark = { label -> vm.markMessage(m.id, label) },
                         onDelete = { vm.deleteMessage(m.id) },
+                        query = key.query,
                     )
                 }
-                val older = rows.getOrNull(index + 1)
-                if (older == null || !sameDay(older.date, m.date)) {
+                if (startsDay(rows, index)) {
                     item(key = "d${m.id}") {
                         Text(
                             dayHeader(context, m.date), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center,
@@ -251,9 +268,26 @@ fun ThreadScreen(key: ThreadKey, onBack: () -> Unit) {
     }
 }
 
+/** Whether the message at [index] (newest first) is its day's first, so a day header goes above it. */
+private fun startsDay(rows: List<ThreadMessageRow>, index: Int): Boolean {
+    val older = rows.getOrNull(index + 1)
+    return older == null || !sameDay(older.date, rows[index].date)
+}
+
+/** The message list's item index of message [id]: each message is an item, followed by its day header if [startsDay]. */
+private fun itemIndexOf(rows: List<ThreadMessageRow>, id: Long): Int? {
+    var item = 0
+    rows.forEachIndexed { index, m ->
+        if (m.id == id) return item
+        item += if (startsDay(rows, index)) 2 else 1
+    }
+    return null
+}
+
 /**
  * One message. Its text is selectable (long-press a word, drag the handles for part of it, or Select all) and never has
- * links; a tap opens the message's menu (spam marks, details, copying the whole text, delete).
+ * links; a tap opens the message's menu (spam marks, details, copying the whole text, delete). A search's [query] is
+ * highlighted.
  */
 @Composable
 fun MessageBubble(
@@ -261,6 +295,7 @@ fun MessageBubble(
     onWhy: () -> Unit,
     onMark: (UserLabel) -> Unit,
     onDelete: () -> Unit,
+    query: String? = null,
 ) {
     val incoming = m.type == MsgType.INBOX
     val flagged = incoming && m.effectiveLabel != LabelCode.HAM
@@ -309,7 +344,7 @@ fun MessageBubble(
                 // The selection toolbar offers only Copy and Select all: no smart "Open" or "Call" for a link or number in
                 // the text, and no other apps' text actions.
                 SelectionContainer(selection, Modifier.filterTextContextMenuComponents { it.key in COPY_ONLY }) {
-                    Text(m.body, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp).testTag("body_${m.id}"))
+                    Text(highlighted(m.body, query), modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp).testTag("body_${m.id}"))
                 }
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

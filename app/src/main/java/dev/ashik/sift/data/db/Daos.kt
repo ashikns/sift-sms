@@ -135,6 +135,13 @@ interface MessageDao {
     @Query("SELECT m.id, " + FOLDER_OF + " AS folder FROM messages m LEFT JOIN classifications c ON c.messageId = m.id WHERE m.type = 1")
     suspend fun incomingFolders(): List<MessageFolder>
 
+    /** Every message, newest first, for search. */
+    @Query(
+        "SELECT m.id, m.threadId, " + FOLDER_OF + " AS folder, m.body, m.date, m.type " +
+            "FROM messages m LEFT JOIN classifications c ON c.messageId = m.id ORDER BY m.date DESC, m.id DESC",
+    )
+    fun observeSearchable(): Flow<List<SearchableMessage>>
+
     @Query("SELECT (date / 604800000) AS week, COUNT(*) AS count FROM messages WHERE type = 1 GROUP BY week")
     suspend fun incomingPerWeek(): List<WeekCount>
 
