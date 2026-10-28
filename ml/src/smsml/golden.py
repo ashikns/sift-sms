@@ -43,18 +43,20 @@ EDGE_CASES = [
     "ⅠⅡⅢ ①② ½ ™ ﬁx",
 ]
 
-# Sender keys as the app normalizes them (SenderInfo.key), for the sid and SND cases: DLT headers and near misses,
-# phone numbers, short codes, an email, alphanumeric IDs, and no sender at all.
+# Sender keys as the app normalizes them (SenderInfo.key), for the sid, DLT category and SND cases: DLT headers in every
+# category, without one, with a letter that isn't one, and near misses; phone numbers, short codes, an email,
+# alphanumeric IDs, and no sender at all.
 SENDERS = [
     "AX-ICICIT-S", "JD-ICICIT-T", "VM-HDFCBK-G", "AD-HDFCBK-P", "BZ-AIRTEL", "ICICIT", "AX-ICI-S", "AX-ICICIBNK-S",
     "AX-123456-S", "+915550100123", "+15550100199", "57575", "jane.doe@example.com", "AMAZON ALERTS", "unknown", "",
     None, "AX-ICICIBANK-S", "AX-IC-S", "A1-ICICIT-S", "AXX-ICICIT-S", "AX-ICICIT-SS", "AX-ICICIT-1", "AX-ICICIT-",
-    "AX--S", "ax-icicit-s", "AX-ICICIT-S-T", "-ICICIT-S", "AX-ICİCIT-S", "AX-ICICIT-S ", "AX-ICIC|T-S",
+    "AX--S", "ax-icicit-s", "AX-ICICIT-S-T", "-ICICIT-S", "AX-ICİCIT-S", "AX-ICICIT-S ", "AX-ICIC|T-S", "AX-ICICIT-X",
     "AMAZ\ud800N \U0001F4E6",  # an unpaired surrogate (a malformed address) and a real supplementary code point
 ]
 
 # Hand-written Indian messages with the kind of sender each arrives from: one sender's alerts and upsell on two routes,
-# another bank's passcode and debit alert, a phished KYC notice from a phone number, a short code and an operator.
+# another bank's passcode and debit alert, a government weather alert, a phished KYC notice from a phone number, a
+# short code and an operator.
 DLT_CASES = [
     ("AX-ICICIT-S", "INR 2,500.00 spent using ICICI Bank Card XX1234 on 28-Oct-26 at AMAZON. Avl Limit: INR 1,20,000.00. "
                     "If not you, call 18002662."),
@@ -66,6 +68,8 @@ DLT_CASES = [
                     "Do not share."),
     ("AD-HDFCBK-T", "Update: INR 1,250.00 debited from HDFC Bank A/c XX9012 on 28-10-26 to VPA zomato@hdfcbank. "
                     "Not you? Call 18002586161"),
+    ("JM-NDMAEW-G", "Orange alert: heavy rainfall likely in Mumbai and Thane in the next 24 hours. Avoid waterlogged "
+                    "roads and stay indoors. -NDMA"),
     ("+915550100123", "Dear user your KYC is pending. Update now at http://kyc-update-sbi.top or your account will be "
                       "blocked today."),
     ("57575", "Your Amazon order #405-1234567-8901234 is out for delivery today. Track at https://amzn.in/d/abc"),

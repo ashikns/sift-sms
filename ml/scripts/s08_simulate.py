@@ -39,14 +39,13 @@ import scipy.sparse as sp
 from smsml.decide import SPAM, Thresholds, decide
 from smsml.features import META_NAMES, sender_id
 from smsml.head import Example, Head, Priors, Weighting, example_weights, personalize
-from smsml.pipeline import (BUNDLE_WORK, WORKERS, config, featurize, load_modern_eval, sender_key, senders_of, work,
-                            write_json)
+from smsml.pipeline import (BUNDLE_WORK, WORKERS, config, featurize, load_modern_eval, sender_key, sender_meta,
+                            senders_of, work, write_json)
 
 FROZEN = 1e6  # a prior this strong keeps a block at its base weights
 PERSONAL = {"personal", "first_contact"}
 OTP = META_NAMES.index("otp_pattern")
 URLS = META_NAMES.index("url_count")
-KIND = {"SHORT_CODE": 21, "ALPHANUMERIC": 23, "EMAIL": 24}
 
 
 @dataclass
@@ -389,6 +388,9 @@ def main() -> int:
     S = sp.load_npz(work("features_S.npz"))
     meta = np.load(work("features_meta.npy"))
     sub = df.iloc[rows].reset_index(drop=True)
+    # The user's own messages carry the sender features the phone computes (the DLT category suffix included).
+    inbox = (sub["source"] == "inbox").to_numpy()
+    meta[inbox] = sender_meta(meta[inbox], sub[inbox])
     sids = [sender_id(sender_key(s)) for s in senders_of(sub)]
     # Noisy labels would make even a diligent simulated user mark wrongly.
     pool_mask = (sub["split"].isin(["val_a", "val_b"]) & ~sub["source"].isin(cfg["noisy_sources"])).to_numpy()
@@ -403,13 +405,11 @@ def main() -> int:
     em = np.load(work("emb_modern.npy"))
     modern_senders = senders_of(modern[dev])
     Xm, Sm, mm = featurize(modern.loc[dev, "text"].tolist(), base.idf, modern_senders)
+    mm = sender_meta(mm, modern[dev])
     for j, (i, row) in enumerate(modern[dev].iterrows()):
         if args.traffic == "transactional" and row["label"] == 0 and row["category"] in PERSONAL:
             continue
-        mj = mm[j].copy()
-        if row["sender_type"] in KIND:
-            mj[KIND[row["sender_type"]]] = 1.0
-        pool.append(Msg(int(row["label"]), em[i], mj, Xm[j].indices, Xm[j].data, Sm[j].indices, Sm[j].data,
+        pool.append(Msg(int(row["label"]), em[i], mm[j], Xm[j].indices, Xm[j].data, Sm[j].indices, Sm[j].data,
                         sender_id(sender_key(modern_senders[j])), "", f"modern-{i}", row["text"]))
     rng = np.random.default_rng(int(cfg["seed"]))
     hams = [m for m in pool if m.y == 0]

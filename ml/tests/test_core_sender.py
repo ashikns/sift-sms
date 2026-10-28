@@ -3,10 +3,11 @@ import math
 import numpy as np
 import pytest
 
-from smsml.features import feature_strings, sender_id, snd_features, snd_strings, sparse_cosine, sparse_features
+from smsml.features import (META_NAMES, dlt_category, feature_strings, sender_id, snd_features, snd_strings,
+                            sparse_cosine, sparse_features)
 from smsml.hashing import hash_feature
 from smsml.normalize import normalize
-from smsml.pipeline import featurize, sender_key, senders_of
+from smsml.pipeline import featurize, sender_key, sender_meta, senders_of
 
 ALERT = "INR 2,500.00 spent using ICICI Bank Card XX1234 at AMAZON. If not you, call 18002662. icici.com/x"
 
@@ -42,6 +43,45 @@ ALERT = "INR 2,500.00 spent using ICICI Bank Card XX1234 at AMAZON. If not you, 
 ])
 def test_sender_id(key, sid):
     assert sender_id(key) == sid
+
+
+@pytest.mark.parametrize("key,cat", [
+    ("AX-ICICIT-S", "S"),
+    ("JD-ICICIT-T", "T"),
+    ("CP-BLNKIT-P", "P"),
+    ("VK-NDMAEW-G", "G"),
+    ("AX-123456-S", "S"),
+    ("VM-HDFCBK", None),  # no suffix
+    ("AX-ICICIT-X", None),  # not a category
+    ("ICICIT", None),
+    ("AX-ICICIBANK-S", None),  # not a DLT header
+    ("AX-IC-S", None),
+    ("A1-ICICIT-S", None),
+    ("AX-ICICIT-SS", None),
+    ("AX-ICICIT-1", None),
+    ("AX-ICICIT-", None),
+    ("ax-icicit-s", None),
+    ("AX-ICICIT-S-T", None),
+    ("AX-ICICIT-S ", None),
+    ("+915550100123", None),
+    ("57575", None),
+    ("unknown", None),
+    ("", None),
+    (None, None),
+])
+def test_dlt_category(key, cat):
+    assert dlt_category(key) == cat
+
+
+def test_sender_meta_sets_the_category_the_phone_reads():
+    import pandas as pd
+
+    df = pd.DataFrame({"sender": ["cp-blnkit-p", "AX-ICICIT-S", "VM-HDFCBK", "57575", None],
+                       "sender_type": ["ALPHANUMERIC", "ALPHANUMERIC", "ALPHANUMERIC", "SHORT_CODE", None]})
+    meta = sender_meta(np.zeros((5, len(META_NAMES)), dtype=np.float32), df)
+    on = [[META_NAMES[j] for j in np.flatnonzero(row)] for row in meta]
+    assert on == [["snd_alphanumeric", "dlt_promotional"], ["snd_alphanumeric", "dlt_service"], ["snd_alphanumeric"],
+                  ["snd_short_code"], []]
 
 
 def test_snd_strings_pair_the_sid_with_words_and_link_domains():
@@ -112,7 +152,7 @@ def test_featurize_with_senders():
     X, S, meta = featurize(texts, idf, ["AX-ICICIT-S", "jd-icicit-t", None])
     X0, S0, meta0 = featurize(texts, idf)
     assert (X != X0).nnz == 0 and np.array_equal(meta, meta0)  # n-grams and metadata ignore the sender
-    assert not meta[:, 21:].any()  # the sender-type features stay 0 offline, even with a sender
+    assert not meta[:, 21:].any()  # the sender features (type, DLT category) stay 0 offline, even with a sender
     assert S0.nnz == 0 and S[2].nnz == 0
     n = normalize(ALERT)
     want_idx, want_val = snd_features("ICICIT", n)

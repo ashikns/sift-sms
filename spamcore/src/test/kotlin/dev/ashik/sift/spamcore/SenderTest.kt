@@ -1,6 +1,7 @@
 package dev.ashik.sift.spamcore
 
 import dev.ashik.sift.spamcore.features.Features
+import dev.ashik.sift.spamcore.features.SenderFeatures
 import dev.ashik.sift.spamcore.features.SparseVector
 import dev.ashik.sift.spamcore.head.LinearHead
 import dev.ashik.sift.spamcore.normalize.Resources
@@ -12,7 +13,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.math.sqrt
 
-/** The sender identity (sid), the sender × content (SND) vector and the head's SND term (ml/SPEC.md feat_v2, score_v2). */
+/**
+ * The sender identity (sid), the DLT category, the sender × content (SND) vector and the head's SND term (ml/SPEC.md
+ * feat_v3, score_v2).
+ */
 class SenderTest {
     private val normalizer = TextNormalizer(Resources.load { javaClass.classLoader.getResourceAsStream("golden/resources/$it") })
     private val alert = normalizer.normalize("INR 2,500.00 spent using ICICI Bank Card XX1234 at AMAZON. Not you? Call 18002662. icici.com/x")
@@ -32,6 +36,29 @@ class SenderTest {
         assertNull(Features.senderId("unknown"))
         assertNull(Features.senderId(""))
         assertNull(Features.senderId(null))
+    }
+
+    @Test
+    fun `the DLT category is a header's P, S, T or G suffix`() {
+        val cases = mapOf("AX-ICICIT-S" to 'S', "JD-ICICIT-T" to 'T', "CP-BLNKIT-P" to 'P', "VK-NDMAEW-G" to 'G', "AX-123456-S" to 'S')
+        for ((key, cat) in cases) assertEquals(cat, Features.dltCategory(key), key)
+        for (key in listOf(
+            "VM-HDFCBK", "AX-ICICIT-X", "ICICIT", "AX-ICICIBANK-S", "AX-IC-S", "A1-ICICIT-S", "AX-ICICIT-SS", "AX-ICICIT-1",
+            "AX-ICICIT-", "ax-icicit-s", "AX-ICICIT-S-T", "AX-ICICIT-S ", "+915550100123", "57575", "unknown", "", null,
+        )) {
+            assertNull(Features.dltCategory(key), key)
+        }
+    }
+
+    @Test
+    fun `the DLT category sets one of metadata 27-30`() {
+        val names = Features.META_NAMES
+        for ((cat, name) in listOf('P' to "dlt_promotional", 'S' to "dlt_service", 'T' to "dlt_transactional", 'G' to "dlt_government")) {
+            val m = Features.metadata(alert, SenderFeatures(dlt = cat))
+            assertEquals(listOf(name), (27 until 31).filter { m[it] == 1f }.map { names[it] }, "$cat")
+        }
+        assertTrue((27 until 31).all { Features.metadata(alert)[it] == 0f })
+        assertEquals(30, Features.SENDER_RANGE.last)
     }
 
     @Test
@@ -111,5 +138,19 @@ class SenderTest {
         val h = head(FloatArray(Features.BUCKETS), toward(sparse, mapOf("b:spent using" to 40f)))
         val cues = h.explain(null, meta, sparse, Features.snd("ICICIT", alert), stringsByIndex("ICICIT"))
         assertEquals(listOf("Contains “spent using”"), cues.map { it.text })
+    }
+
+    @Test
+    fun `a promotional suffix with a positive weight is a cue`() {
+        val wMeta = FloatArray(Features.N_META).also { it[Features.META_NAMES.indexOf("dlt_promotional")] = 1.5f }
+        val h = LinearHead(
+            bias = 0.0, wEmbed = FloatArray(LinearHead.EMBED_DIM), muEmbed = FloatArray(LinearHead.EMBED_DIM), wMeta = wMeta,
+            muMeta = FloatArray(Features.N_META), wHash = FloatArray(Features.BUCKETS), wSnd = FloatArray(Features.BUCKETS),
+            idf = FloatArray(Features.BUCKETS) { 1f }, fbBias = 0.0, fbScale = 1.0, wMetaFb = wMeta,
+        )
+        val promo = Features.metadata(alert, SenderFeatures(dlt = 'P'))
+        val cues = h.explain(null, promo, SparseVector.EMPTY, SparseVector.EMPTY, emptyMap())
+        assertEquals(listOf("Registered as a promotional message (-P)"), cues.map { it.text })
+        assertTrue(h.explain(null, Features.metadata(alert, SenderFeatures(dlt = 'S')), SparseVector.EMPTY, SparseVector.EMPTY, emptyMap()).isEmpty())
     }
 }

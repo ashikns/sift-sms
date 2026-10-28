@@ -1,4 +1,4 @@
-"""feat_v2 — hashed n-gram features, the sender × content (SND) vector and the 27 metadata values (SPEC.md).
+"""feat_v3 — hashed n-gram features, the sender × content (SND) vector and the 31 metadata values (SPEC.md).
 Mirrored by spamcore's features package."""
 
 from __future__ import annotations
@@ -10,17 +10,17 @@ import numpy as np
 from .hashing import BUCKETS, hash_feature
 from .normalize import CURRENCY, Normalized
 
-FEATURE_VERSION = "feat_v2"
+FEATURE_VERSION = "feat_v3"
 
 META_NAMES = (
     "len_log", "url_count", "url_shortener", "url_ip_host", "url_risky_tld", "url_punycode_or_at",
     "url_brand_lookalike", "phone_number", "email_address", "currency_amount", "optout_stop", "otp_pattern",
     "upper_ratio", "digit_ratio", "excl_count", "emoji_count", "invisible", "lookalike", "dropped_ratio",
     "non_gsm7", "url_official", "snd_short_code", "snd_long_code_nanp", "snd_alphanumeric", "snd_email",
-    "snd_international", "snd_first_contact",
+    "snd_international", "snd_first_contact", "dlt_promotional", "dlt_service", "dlt_transactional", "dlt_government",
 )
 N_META = len(META_NAMES)
-SENDER_SLICE = slice(21, 27)
+SENDER_SLICE = slice(21, 31)
 
 CURRENCY_TOKENS = frozenset(chr(c) for c in CURRENCY) | {"$"}
 PHONE_CHARS = frozenset("0123456789+-.() ")
@@ -30,20 +30,38 @@ OTP_WORDS = ("code", "otp", "passcode", "verification", "pin", "0fa")  # "2FA" r
 LN_1001 = math.log(1001.0)
 DLT_LETTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 DLT_ID_CHARS = DLT_LETTERS | frozenset("0123456789")
+DLT_CATEGORIES = "PSTG"  # promotional, service, transactional, government: metadata 27-30 in this order
+DLT_START = META_NAMES.index("dlt_promotional")
 
 
-def sender_id(key: str | None) -> str | None:
-    """sid (SPEC.md): the identity of a normalized sender key, or None. An Indian DLT header `AX-ICICIT-S` is its
-    sender ID `ICICIT` (the route prefix varies per message; the category suffix is not used); any other key is
-    itself, with unpaired surrogates as U+FFFD."""
-    if not key or key == "unknown":
-        return None
+def _dlt_parts(key: str) -> list[str] | None:
+    """The `-`-separated parts of an Indian DLT header (`AX-ICICIT-S`, or `AX-ICICIT` without a category), else None."""
     parts = key.split("-")
     if (len(parts) in (2, 3) and len(parts[0]) == 2 and all(c in DLT_LETTERS for c in parts[0])
             and 3 <= len(parts[1]) <= 8 and all(c in DLT_ID_CHARS for c in parts[1])
             and (len(parts) == 2 or (len(parts[2]) == 1 and parts[2] in DLT_LETTERS))):
+        return parts
+    return None
+
+
+def sender_id(key: str | None) -> str | None:
+    """sid (SPEC.md): the identity of a normalized sender key, or None. An Indian DLT header `AX-ICICIT-S` is its
+    sender ID `ICICIT` (the route prefix varies per message, and every category is the same sender); any other key is
+    itself, with unpaired surrogates as U+FFFD."""
+    if not key or key == "unknown":
+        return None
+    parts = _dlt_parts(key)
+    if parts is not None:
         return parts[1]
     return "".join("\ufffd" if 0xD800 <= ord(c) <= 0xDFFF else c for c in key)
+
+
+def dlt_category(key: str | None) -> str | None:
+    """dlt (SPEC.md): the category suffix P, S, T or G of an Indian DLT header (`AX-ICICIT-S` → `S`), else None."""
+    parts = _dlt_parts(key) if key else None
+    if parts is None or len(parts) != 3 or parts[2] not in DLT_CATEGORIES:
+        return None
+    return parts[2]
 
 
 def word_tokens(ng: str) -> list[str]:
@@ -194,8 +212,9 @@ def currency_amount(ng: str, toks: list[str]) -> bool:
 
 
 def metadata(n: Normalized) -> np.ndarray:
-    """The metadata values. The sender features (21-26) stay 0 offline, even for rows with a sender: sender
-    information reaches the trained weights only through the SND vector."""
+    """The metadata values. The sender features (21-30) stay 0 offline, even for rows with a sender: sender
+    information reaches the trained weights only through the SND vector (pipeline.sender_meta fills them as the
+    phone does, for the steps that set and check their weights)."""
     toks = word_tokens(n.ng)
     words = set(toks)
     m = [0.0] * N_META
@@ -250,7 +269,8 @@ def sparse_cosine(ai: np.ndarray, av: np.ndarray, bi: np.ndarray, bv: np.ndarray
 
 
 __all__ = [
-    "FEATURE_VERSION", "META_NAMES", "N_META", "SENDER_SLICE", "BUCKETS", "sender_id", "word_tokens", "word_strings",
+    "FEATURE_VERSION", "META_NAMES", "N_META", "SENDER_SLICE", "BUCKETS", "DLT_CATEGORIES", "DLT_START", "sender_id",
+    "dlt_category", "word_tokens", "word_strings",
     "url_strings", "feature_strings", "snd_strings", "sparse_features", "snd_features", "bucket_set", "idf_from_df",
     "metadata", "sparse_cosine",
 ]

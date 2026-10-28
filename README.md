@@ -15,11 +15,12 @@ plain text, never clickable; long-press a message to select and copy all or part
    tricks themselves become signals.
 2. **Understand.** A fine-tuned MiniLM transformer (22.7M parameters, int8, ~23 MB) turns the text into a 384-number
    embedding in about 10 ms, using ONNX Runtime on the CPU.
-3. **Score.** A linear model combines the embedding with hashed word/character n-grams and 27 message features (link
+3. **Score.** A linear model combines the embedding with hashed word/character n-grams and 31 message features (link
    to a shortener, a risky domain ending, a brand look-alike or the brand's official site; phone numbers, money
    amounts, "reply STOP", OTP codes, capital letters, sender type…). Carrier-vetted short codes count as strong
    evidence of a legitimate sender, and international numbers count against.
-   It also weighs the sender paired with each of the message's words and link domains, so a sender counts only together with what its message says: a bank's card-alert wording can read as legitimate from that bank while the bank's upsells and other senders' look-alikes don't. Every route of an Indian business sender is one sender (`AX-ICICIT-S`, `JD-ICICIT-T` → `ICICIT`), and its category suffix is ignored.
+   It also weighs the sender paired with each of the message's words and link domains, so a sender counts only together with what its message says: a bank's card-alert wording can read as legitimate from that bank while the bank's upsells and other senders' look-alikes don't. Every route of an Indian business sender is one sender (`AX-ICICIT-S`, `JD-ICICIT-T` → `ICICIT`).
+   An Indian sender ID's category suffix (`-P` promotional, `-S` service, `-T` transactional, `-G` government) adds a small, fixed amount to the score. Many senders don't follow the categories (one bank sends card alerts and its own upsells alike under `-S`), so the suffix can tip a borderline message but can't overturn clear wording, and your marks always win over it.
 4. **Decide**, always per message and from that message's own content. Nothing is decided per sender: the same
    sender can send a promo you call spam and a passcode you need, and even a contact's message is judged on what it
    says. In order:
@@ -46,8 +47,8 @@ plain text, never clickable; long-press a message to select and copy all or part
      it read. Your own marks don't make a message unread.
    - Deleting an entry under Settings → Learning entries removes that mark: Sift forgets it, retrains, and judges the
      message again on its own.
-   - The embedding weights, message-feature weights and sender-type signals stay fixed. That way a mark on one
-     short-code promo doesn't shift every short-code message.
+   - The embedding weights, message-feature weights and sender signals (type, category suffix) stay fixed. That way a
+     mark on one short-code or `-P` promo doesn't shift every short-code or `-P` message.
    - After an app update ships a new model, your marks are re-applied to it automatically.
 
 ## How well it works
@@ -60,14 +61,17 @@ legitimate messages wrongly moved to Spam.
 
 | Setting | Spam caught | FPR |
 |---|---|---|
-| Conservative | 35% | 0.09% |
-| **Balanced (default)** | **50%** | **0.80%** |
-| Aggressive | 87% | 2.6% |
+| Conservative | 44% | 0.38% |
+| **Balanced (default)** | **60%** | **0.85%** |
+| Aggressive | 93% | 2.7% |
+
+The sender ID's category suffix accounts for 10 points of Balanced recall (22 more `-P` promotions caught). It also
+flags one more legitimate message, a dealer's service reminder sent as `-P`; one "Not spam" clears that template.
 
 That's before any marks. Replayed in arrival order through the phone's engine from a fresh install, by a user who
-corrects every mistake, the held-out half takes 57 marks in 8½ months: 9 legitimate messages put in Spam and 48
-promotions left in the inbox the first time a template appears. Errors in the later half drop from 87 without
-learning to 34.
+corrects every mistake, the held-out half takes 49 marks in 8½ months: 8 legitimate messages put in Spam and 41
+promotions left in the inbox the first time a template appears. Errors in the later half drop from 68 without
+learning to 26.
 
 **Public data** (test split: 1,387 legit / 3,809 spam from UCI, Mishra, NCSU, IMC'25, the templates and Indian
 datasets):
@@ -91,8 +95,8 @@ Balanced catches 81% of its spam at 0.09% FPR.
   input, 100% of the time. Visible tricks (spaced letters, leetspeak, typos) cost 2.5 points of recall.
 
 **Learning from feedback** (`s08_simulate.py`: 8 simulated streams, learning only from marks):
-- **Scams the model missed.** After you mark one, 74% of its variants (new names, amounts, links, new numbers) are
-  caught, vs 9% without learning.
+- **Scams the model missed.** After you mark one, 75% of its variants (new names, amounts, links, new numbers) are
+  caught, vs 8% without learning.
 - **Legitimate notices it flagged.** After "Not spam", all of that sender's similar notices stay in the inbox, vs
   25%.
 - Errors on repeat campaigns halve. The base model already handles most of these streams, so the total cost
@@ -159,9 +163,9 @@ uv run python -I scripts/s02_split.py        # inbox time split, grouped splits,
 uv run python -I scripts/s03_finetune.py     # fine-tune MiniLM (GPU)
 uv run python -I scripts/s04_export.py       # ONNX → fused → int8 per-channel → ORT format
 uv run python -I scripts/s05_embed.py        # int8 embeddings, batch size 1 (as on the phone)
-uv run python -I scripts/s06_heads.py        # base head
+uv run python -I scripts/s06_heads.py        # base head, and out-of-fold scores for the inbox's older half
 uv run python -I scripts/s07_calibrate.py    # thresholds by false-positive rate
-uv run python -I scripts/s07b_sender_prior.py  # sender-type weights (short code, international…), modern dev split
+uv run python -I scripts/s07b_sender_prior.py  # sender-type weights (modern dev split), DLT category weights (inbox, out of fold)
 uv run python -I scripts/s08_simulate.py     # simulated users → personalization defaults
 uv run python -I scripts/s08_simulate.py --confirm   # re-check the chosen defaults on fresh streams
 uv run python -I scripts/s09_evaluate.py     # acceptance gates (non-zero exit on failure)

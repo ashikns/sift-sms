@@ -27,12 +27,14 @@ enum class Reason {
 }
 
 /**
- * Facts about the channel a message arrived on. They feed the message's own score (sender-type features, and the
- * sender paired with the message's words and link domains); the sender never decides a verdict by itself.
+ * Facts about the channel a message arrived on. They feed the message's own score (sender-type features, the DLT
+ * category, and the sender paired with the message's words and link domains); the sender never decides a verdict by
+ * itself.
  *
  * @param key normalized sender key: E.164 number, short-code digits, upper-cased alphanumeric ID, or lower-cased email.
- *   Its identity (ml/SPEC.md sid: one per DLT sender across routes, e.g. `ICICIT` for `AX-ICICIT-S`) scopes the
- *   sender × content features, and "not spam" near-duplicate matches can require the same one.
+ *   Its identity (ml/SPEC.md sid: one per DLT sender across routes and categories, e.g. `ICICIT` for `AX-ICICIT-S`)
+ *   scopes the sender × content features, and "not spam" near-duplicate matches can require the same one. A DLT
+ *   header's category suffix (`S` in `AX-ICICIT-S`) only contributes a small, fixed weight to the score.
  * @param international the number's country differs from the SIM's.
  * @param firstContact no earlier message from this sender exists.
  */

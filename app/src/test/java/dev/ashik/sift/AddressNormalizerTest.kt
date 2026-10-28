@@ -43,6 +43,10 @@ class AddressNormalizerTest {
         val alpha = classify("  Amazon  Alerts ")
         assertEquals(SenderKind.ALPHANUMERIC, alpha.kind)
         assertEquals("AMAZON ALERTS", alpha.key)
+        // A DLT header keeps its route prefix and category suffix; spamcore reads the sid and category from the key.
+        val dlt = classify("cp-Blnkit-P")
+        assertEquals(SenderKind.ALPHANUMERIC, dlt.kind)
+        assertEquals("CP-BLNKIT-P", dlt.key)
         val email = classify("Bob@Example.COM")
         assertEquals(SenderKind.EMAIL, email.kind)
         assertEquals("bob@example.com", email.key)

@@ -41,35 +41,43 @@ class SparseVector(val indices: IntArray, val values: FloatArray) {
     }
 }
 
-/** Sender facts for metadata features 21-26 (always false for offline corpus messages, even ones with a sender). */
+/**
+ * Sender facts for metadata features 21-30 (always unset for offline corpus messages, even ones with a sender).
+ *
+ * @param dlt the sender key's DLT category ([Features.dltCategory]): `P`, `S`, `T`, `G` or null.
+ */
 data class SenderFeatures(
     val kind: SenderKind = SenderKind.UNKNOWN,
     val nanp: Boolean = false,
     val international: Boolean = false,
     val firstContact: Boolean = false,
+    val dlt: Char? = null,
 ) {
     companion object {
         val NONE = SenderFeatures()
     }
 }
 
-/** feat_v2 (ml/SPEC.md): mirrors ml/src/smsml/features.py. */
+/** feat_v3 (ml/SPEC.md): mirrors ml/src/smsml/features.py. */
 object Features {
-    const val VERSION = "feat_v2"
+    const val VERSION = "feat_v3"
     const val BITS = 18
     const val BUCKETS = 1 shl BITS
     const val MASK = BUCKETS - 1
     const val SEED = 0x53504D31
-    const val N_META = 27
-    val SENDER_RANGE = 21 until 27
+    const val N_META = 31
+    val SENDER_RANGE = 21 until 31
 
     val META_NAMES = listOf(
         "len_log", "url_count", "url_shortener", "url_ip_host", "url_risky_tld", "url_punycode_or_at",
         "url_brand_lookalike", "phone_number", "email_address", "currency_amount", "optout_stop", "otp_pattern",
         "upper_ratio", "digit_ratio", "excl_count", "emoji_count", "invisible", "lookalike", "dropped_ratio",
         "non_gsm7", "url_official", "snd_short_code", "snd_long_code_nanp", "snd_alphanumeric", "snd_email",
-        "snd_international", "snd_first_contact",
+        "snd_international", "snd_first_contact", "dlt_promotional", "dlt_service", "dlt_transactional", "dlt_government",
     )
+
+    /** DLT categories in the order of metadata 27-30: promotional, service, transactional, government. */
+    const val DLT_CATEGORIES = "PSTG"
 
     private val CURRENCY_TOKENS: Set<Char> = TextNormalizer.CURRENCY.map { it.toChar() }.toSet() + '$'
     private const val PHONE_CHARS = "0123456789+-.() "
@@ -96,23 +104,36 @@ object Features {
         return out
     }
 
-    /**
-     * sid (ml/SPEC.md): the identity of a normalized sender key ([dev.ashik.sift.spamcore.SenderInfo.key]), or null.
-     * An Indian DLT header `AX-ICICIT-S` is its sender ID `ICICIT` (the route prefix varies per message; the category
-     * suffix is not used); any other key is itself, with unpaired surrogates as U+FFFD.
-     */
-    fun senderId(key: String?): String? {
-        if (key.isNullOrEmpty() || key == "unknown") return null
+    /** The `-`-separated parts of an Indian DLT header (`AX-ICICIT-S`, or `AX-ICICIT` without a category), else null. */
+    private fun dltParts(key: String): List<String>? {
         val parts = key.split('-')
         val dlt = parts.size in 2..3 &&
             parts[0].length == 2 && parts[0].all { it in 'A'..'Z' } &&
             parts[1].length in 3..8 && parts[1].all { it in 'A'..'Z' || it in '0'..'9' } &&
             (parts.size == 2 || (parts[2].length == 1 && parts[2][0] in 'A'..'Z'))
+        return if (dlt) parts else null
+    }
+
+    /**
+     * sid (ml/SPEC.md): the identity of a normalized sender key ([dev.ashik.sift.spamcore.SenderInfo.key]), or null.
+     * An Indian DLT header `AX-ICICIT-S` is its sender ID `ICICIT` (the route prefix varies per message, and every
+     * category is the same sender); any other key is itself, with unpaired surrogates as U+FFFD.
+     */
+    fun senderId(key: String?): String? {
+        if (key.isNullOrEmpty() || key == "unknown") return null
+        val parts = dltParts(key)
         return when {
-            dlt -> parts[1]
+            parts != null -> parts[1]
             key.none { it.isSurrogate() } -> key
             else -> buildString { key.codePoints().forEach { appendCodePoint(if (it in 0xD800..0xDFFF) 0xFFFD else it) } }
         }
+    }
+
+    /** dlt (ml/SPEC.md): the category suffix P, S, T or G of an Indian DLT header (`AX-ICICIT-S` → `S`), else null. */
+    fun dltCategory(key: String?): Char? {
+        val parts = if (key.isNullOrEmpty()) null else dltParts(key)
+        if (parts == null || parts.size != 3 || parts[2][0] !in DLT_CATEGORIES) return null
+        return parts[2][0]
     }
 
     fun wordStrings(n: Normalized): TreeSet<String> {
@@ -302,6 +323,7 @@ object Features {
         m[24] = b(sender.kind == SenderKind.EMAIL)
         m[25] = b(sender.international)
         m[26] = b(sender.firstContact)
+        for ((j, c) in DLT_CATEGORIES.withIndex()) m[27 + j] = b(sender.dlt == c)
         return FloatArray(N_META) { m[it].toFloat() }
     }
 }

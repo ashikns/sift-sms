@@ -8,6 +8,7 @@ import dev.ashik.sift.spam.AssetBundleSource
 import dev.ashik.sift.spam.SpamEngineFactory
 import dev.ashik.sift.spamcore.encoder.OrtTextEncoder
 import dev.ashik.sift.spamcore.features.Features
+import dev.ashik.sift.spamcore.features.SenderFeatures
 import dev.ashik.sift.spamcore.head.LinearHead
 import dev.ashik.sift.spamcore.model.ModelBundle
 import kotlinx.serialization.json.Json
@@ -59,8 +60,9 @@ class BundleParityTest {
             val ids = bundle.tokenizer.encode(n.enc)
             if (ids.toList() != c["ids"]!!.jsonArray.map { it.jsonPrimitive.long }) { failures += "case $i: ids"; continue }
             val sparse = Features.sparse(n, head.idf)
-            val snd = Features.snd(Features.senderId(c["sender"]!!.jsonPrimitive.contentOrNull), n)
-            val meta = Features.metadata(n)
+            val sender = c["sender"]!!.jsonPrimitive.contentOrNull
+            val snd = Features.snd(Features.senderId(sender), n)
+            val meta = Features.metadata(n, SenderFeatures(dlt = Features.dltCategory(sender)))
             val s = SystemClock.elapsedRealtimeNanos()
             val emb = encoder.embed(ids)
             runMs += (SystemClock.elapsedRealtimeNanos() - s) / 1e6

@@ -50,7 +50,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.coroutineContext
 
-/** Turns message text + sender facts into model inputs (norm_v1 → tok_v1 + feat_v2). */
+/** Turns message text + sender facts into model inputs (norm_v1 → tok_v1 + feat_v3). */
 class Featurizer(private val bundle: ModelBundle) {
     class Prepared(
         val normalized: Normalized,
@@ -96,6 +96,7 @@ class Featurizer(private val bundle: ModelBundle) {
             nanp = s.kind == SenderKind.PHONE && s.key.startsWith("+1") && s.key.length == 12,
             international = s.international,
             firstContact = s.firstContact,
+            dlt = Features.dltCategory(s.key),
         )
     }
 }

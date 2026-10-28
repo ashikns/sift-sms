@@ -13,7 +13,8 @@ import pandas as pd
 import scipy.sparse as sp
 import yaml
 
-from .features import N_META, bucket_set, metadata, sender_id, snd_features, sparse_features
+from .features import (DLT_CATEGORIES, DLT_START, META_NAMES, N_META, bucket_set, dlt_category, metadata, sender_id,
+                       snd_features, sparse_features)
 from .hashing import BUCKETS
 from .normalize import normalize
 from .resources import default_resources
@@ -122,6 +123,27 @@ def senders_of(df: pd.DataFrame) -> list[str | None]:
     return [None if pd.isna(s) else str(s) for s in df["sender"]]
 
 
+META_INDEX = {name: i for i, name in enumerate(META_NAMES)}
+
+
+def sender_meta(meta: np.ndarray, df: pd.DataFrame) -> np.ndarray:
+    """`meta` with the sender features (21-30) as the phone computes them from each row's sender and sender_type;
+    first contact is unknown offline, so it stays 0. Training keeps these features 0 (SPEC.md); this is for the steps
+    that set the sender weights (s07b) and measure them (s08, s09)."""
+    out = meta.copy()
+    for i, (kind, s) in enumerate(zip(df["sender_type"], senders_of(df), strict=True)):
+        s = s or ""
+        out[i, META_INDEX["snd_short_code"]] = float(kind == "SHORT_CODE")
+        out[i, META_INDEX["snd_alphanumeric"]] = float(kind == "ALPHANUMERIC")
+        out[i, META_INDEX["snd_email"]] = float(kind == "EMAIL")
+        out[i, META_INDEX["snd_long_code_nanp"]] = float(kind == "PHONE" and s.startswith("+1"))
+        out[i, META_INDEX["snd_international"]] = float(kind == "PHONE" and s.startswith("+") and not s.startswith("+1"))
+        cat = dlt_category(sender_key(s))
+        if cat is not None:
+            out[i, DLT_START + DLT_CATEGORIES.index(cat)] = 1.0
+    return out
+
+
 _IDF: np.ndarray | None = None
 
 
@@ -149,7 +171,7 @@ def _csr(rows: list, i: int) -> sp.csr_matrix:
 def featurize(texts: list[str], idf: np.ndarray,
               senders: list[str | None] | None = None) -> tuple[sp.csr_matrix, sp.csr_matrix, np.ndarray]:
     """Hashed n-gram features (CSR, n × 2^18), SND vectors (CSR, n × 2^18; empty rows without a sender) and
-    metadata (n × 27) for raw texts and their senders as received. The metadata's sender features stay 0 even with
+    metadata (n × 31) for raw texts and their senders as received. The metadata's sender features stay 0 even with
     a sender (SPEC.md): offline, sender information reaches the model only through the SND vector."""
     items = list(zip(texts, senders if senders is not None else [None] * len(texts), strict=True))
     with ProcessPoolExecutor(WORKERS, initializer=_init_idf, initargs=(idf,)) as ex:

@@ -153,6 +153,8 @@ class LinearHead(
             "snd_email" to "Sent from an email address",
             "snd_international" to "Sent from an international number",
             "snd_first_contact" to "First message from this sender",
+            "dlt_promotional" to "Registered as a promotional message (-P)",
+            "dlt_government" to "Sent as a government broadcast (-G)",
         )
     }
 }

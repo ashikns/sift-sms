@@ -3,11 +3,13 @@
     uv run python -I scripts/s09_evaluate.py
 
 Writes data/work/metrics.json. Every score is the full logit, including the sender × content (SND) term for messages
-with a sender. Also reports the inbox_eval split (the user's own messages held out from everything else: PR/ROC AUC,
-and FPR and spam recall at the shipped thresholds) without gating on it; those numbers stay in metrics.json (s11 doesn't
-ship them). Gates:
+with a sender. The inbox_eval split (the user's own messages held out from everything else) and the modern set are
+scored with the sender features the phone computes (pipeline.sender_meta), the DLT category suffix included; for
+inbox_eval it also reports each category's results without and with the suffix weights. Those numbers stay in
+metrics.json (s11 doesn't ship them). Gates:
   test        PR-AUC ≥ 0.99; Balanced FPR ≤ 0.5% (cluster-bootstrap 95% upper bound ≤ 1.0%), recall ≥ 95%
   future      recall ≥ 90% at Balanced (campaigns that first appeared after the training cutoff)
+  inbox       ROC-AUC ≥ 0.98 and PR-AUC ≥ 0.85; Balanced FPR ≤ 1.5%
   modern      recall ≥ 85%, ham FPR ≤ 2%, OTP false positives: 0 at Conservative, ≤ 1 at Balanced
   robustness  invisible/homoglyph/fullwidth/math-letter variants normalize identically (100%);
               visible tricks cost ≤ 5 recall points
@@ -33,16 +35,16 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 
 from smsml.augment import augment
 from smsml.decide import SPAM, Thresholds, decide
-from smsml.features import META_NAMES, metadata, sender_id, snd_features, sparse_features
+from smsml.features import DLT_CATEGORIES, DLT_START, META_NAMES, dlt_category, metadata, sender_id, snd_features, sparse_features
 from smsml.head import Head
 from smsml.normalize import normalize
-from smsml.pipeline import (BUNDLE_WORK, config, featurize, load_modern_eval, sender_key, senders_of, snapshot_dir, work,
-                            write_json)
+from smsml.pipeline import (BUNDLE_WORK, config, featurize, load_modern_eval, sender_key, sender_meta,
+                            senders_of, snapshot_dir, work, write_json)
 from smsml.resources import default_resources
 from smsml.tokenizer import WordPiece
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
-from s07b_sender_prior import sender_meta  # noqa: E402
+from s07b_sender_prior import by_category  # noqa: E402
 
 OTP, URLS = META_NAMES.index("otp_pattern"), META_NAMES.index("url_count")
 SENSITIVITIES = ("conservative", "balanced", "aggressive")
@@ -156,7 +158,8 @@ def main() -> int:
     # The user's own held-out messages, the distribution the model is for.
     ie = split == "inbox_eval"
     if ie.any():
-        yi, pi = y[ie], p[ie]
+        yi, mi = y[ie], sender_meta(meta[ie], sub[ie])
+        pi = probs(head, emb[ie], X[ie], S[ie], mi)
         both = len(np.unique(yi)) == 2
         m["inbox_eval"] = {
             "n_ham": int((yi == 0).sum()), "n_spam": int((yi == 1).sum()),
@@ -164,9 +167,16 @@ def main() -> int:
             "roc_auc": float(roc_auc_score(yi, pi)) if both else None,
         }
         for s_ in SENSITIVITIES:
-            f = filtered(pi, meta[ie], thr, s_)
+            f = filtered(pi, mi, thr, s_)
             m["inbox_eval"][s_] = {"fpr": float(f[yi == 0].mean()) if (yi == 0).any() else None,
                                    "recall": float(f[yi == 1].mean()) if (yi == 1).any() else None}
+        # The suffix only contributes: zeroing its features (offline mean 0) gives the content-only score.
+        m0 = mi.copy()
+        m0[:, DLT_START:DLT_START + len(DLT_CATEGORIES)] = 0.0
+        cats = [dlt_category(sender_key(s)) for s in senders_of(sub[ie])]
+        m["inbox_eval"]["by_dlt_category"] = by_category(
+            filtered(probs(head, emb[ie], X[ie], S[ie], m0), m0, thr, "balanced"), filtered(pi, mi, thr, "balanced"),
+            cats, yi)
         if both:
             gates["inbox_ranking"] = m["inbox_eval"]["roc_auc"] >= 0.98 and m["inbox_eval"]["pr_auc"] >= 0.85
             gates["inbox_fpr"] = m["inbox_eval"]["balanced"]["fpr"] <= 0.015
@@ -176,7 +186,7 @@ def main() -> int:
     em = np.load(work("emb_modern.npy"))
     mt = (modern["split"] == "test").to_numpy()
     Xm, Sm, mm = featurize(modern.loc[mt, "text"].tolist(), head.idf, senders_of(modern[mt]))
-    mm = sender_meta(mm, modern[mt])  # sender features as the phone computes them (s07b)
+    mm = sender_meta(mm, modern[mt])  # sender features as the phone computes them
     pm = probs(head, em[mt], Xm.astype(np.float64), Sm.astype(np.float64), mm)
     ym = modern.loc[mt, "label"].to_numpy()
     cats = modern.loc[mt, "category"].to_numpy()

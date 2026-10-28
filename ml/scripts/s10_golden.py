@@ -5,8 +5,8 @@
 
 --prelim writes to spamcore/src/test/resources/golden/: cases jsonl, the trainer fixture, and the resource files and
 vocab used to make them. Bundle mode writes app/src/androidTest/assets/golden/bundle_v1.jsonl.gz (read by spamcore's
-GoldenBundleTest and the app's BundleParityTest). Every case carries a sender key (or none) and checks its sid and
-SND vector.
+GoldenBundleTest and the app's BundleParityTest). Every case carries a sender key (or none) and checks its sid, DLT
+category and SND vector; its metadata has the DLT category set (the other sender features stay 0).
 
 The fixtures are committed, so they only hold synthetic and hand-written cases and public-source messages: rows of a
 private source (the user's own inbox) never go in, and both modes refuse to write a fixture with such a text.
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from smsml.features import metadata, sender_id, snd_features, sparse_features
+from smsml.features import DLT_CATEGORIES, DLT_START, dlt_category, metadata, sender_id, snd_features, sparse_features
 from smsml.golden import DLT_CASES, EDGE_CASES, edge_senders, random_senders, random_strings
 from smsml.normalize import normalize
 from smsml.resources import DEFAULT_DIR, FILES, Resources
@@ -67,10 +67,15 @@ def case(raw: str, sender: str | None, res: Resources, wp: WordPiece, idf: np.nd
     idx, val = sparse_features(n, idf)
     sid = sender_id(sender)
     snd_idx, snd_val = snd_features(sid, n)
+    dlt = dlt_category(sender)
+    meta = metadata(n)
+    if dlt is not None:
+        meta[DLT_START + DLT_CATEGORIES.index(dlt)] = 1.0
     return {
         "raw": raw,
         "sender": sender,
         "sid": sid,
+        "dlt": dlt,
         "clean": n.clean,
         "enc": n.enc,
         "ng": n.ng,
@@ -82,7 +87,7 @@ def case(raw: str, sender: str | None, res: Resources, wp: WordPiece, idf: np.nd
         "val": [float(v) for v in val],
         "snd_idx": snd_idx.tolist(),
         "snd_val": [float(v) for v in snd_val],
-        "meta": [float(v) for v in metadata(n)],
+        "meta": [float(v) for v in meta],
     }
 
 
@@ -200,7 +205,6 @@ def bundle_mode(args) -> int:
     with gzip.open(out, "wt", encoding="utf-8") as f:
         for raw, sender in cases:
             c = case(raw, sender, res, wp, head.idf)
-            n = normalize(raw, res)
             ids = np.asarray([c["ids"]], dtype=np.int64)
             e = sess.run(["embedding"], {"input_ids": ids, "attention_mask": np.ones_like(ids)})[0][0]
             # Stored with 7 significant digits; the logit below uses the stored values so both sides see the same input.
@@ -209,7 +213,7 @@ def bundle_mode(args) -> int:
             val = np.asarray(c["val"], dtype=np.float32)
             snd_idx = np.asarray(c["snd_idx"], dtype=np.int32)
             snd_val = np.asarray(c["snd_val"], dtype=np.float32)
-            meta = metadata(n)
+            meta = np.asarray(c["meta"], dtype=np.float32)
             z = head.z(e, meta, idx, val, snd_idx, snd_val)
             c.update({
                 "emb": [float(x) for x in e],

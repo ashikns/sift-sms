@@ -1,6 +1,7 @@
 package dev.ashik.sift.spamcore
 
 import dev.ashik.sift.spamcore.features.Features
+import dev.ashik.sift.spamcore.features.SenderFeatures
 import dev.ashik.sift.spamcore.normalize.Resources
 import dev.ashik.sift.spamcore.normalize.TextNormalizer
 import dev.ashik.sift.spamcore.normalize.Url
@@ -82,9 +83,13 @@ class GoldenNormV1Test {
                 val worst = vals.indices.maxOfOrNull { abs(vals[it] - v.values[it]) } ?: 0.0
                 if (worst > 1e-6) fail("val", "max|d|<=1e-6", worst)
             }
+            val sender = c["sender"]!!.jsonPrimitive.contentOrNull
             val sid = c["sid"]!!.jsonPrimitive.contentOrNull
-            val actualSid = Features.senderId(c["sender"]!!.jsonPrimitive.contentOrNull)
+            val actualSid = Features.senderId(sender)
             if (actualSid != sid) fail("sid", sid, actualSid)
+            val dlt = c["dlt"]!!.jsonPrimitive.contentOrNull?.single()
+            val actualDlt = Features.dltCategory(sender)
+            if (actualDlt != dlt) fail("dlt", dlt, actualDlt)
             // Integer sums and one division per value: the SND vector is bit-identical, not just close.
             val snd = Features.snd(sid, n)
             val sndIdx = c["snd_idx"]!!.jsonArray.map { it.jsonPrimitive.int }
@@ -95,7 +100,7 @@ class GoldenNormV1Test {
                 fail("snd_val", sndVal, snd.values.toList())
             }
             val meta = c["meta"]!!.jsonArray.map { it.jsonPrimitive.double }
-            val m = Features.metadata(n)
+            val m = Features.metadata(n, SenderFeatures(dlt = actualDlt))
             val bad = meta.indices.filter { abs(meta[it] - m[it]) > 1e-6 }
             if (bad.isNotEmpty()) fail("meta", bad.map { Features.META_NAMES[it] to meta[it] }, bad.map { m[it] })
         }

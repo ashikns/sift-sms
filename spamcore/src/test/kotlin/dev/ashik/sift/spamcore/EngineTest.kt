@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import kotlin.math.ln
 import kotlin.math.sqrt
 
 class EngineTest {
@@ -51,7 +52,8 @@ class EngineTest {
         override fun close() = Unit
     }
 
-    private fun writeBundle(dir: File, version: String = "test-1", encoderBytes: ByteArray = ByteArray(8), tauHam: Double = 0.9): File {
+    private fun writeBundle(dir: File, version: String = "test-1", encoderBytes: ByteArray = ByteArray(8), tauHam: Double = 0.9,
+                            dltWeights: Map<Char, Float> = emptyMap()): File {
         dir.mkdirs()
         val cl = javaClass.classLoader
         File(dir, "resources").mkdirs()
@@ -69,7 +71,10 @@ class EngineTest {
         }
         val head = LinearHead(
             bias = -3.0, wEmbed = FloatArray(LinearHead.EMBED_DIM), muEmbed = FloatArray(LinearHead.EMBED_DIM),
-            wMeta = FloatArray(Features.N_META).also { it[Features.META_NAMES.indexOf("url_count")] = 1.5f },
+            wMeta = FloatArray(Features.N_META).also {
+                it[Features.META_NAMES.indexOf("url_count")] = 1.5f
+                for ((c, w) in dltWeights) it[27 + Features.DLT_CATEGORIES.indexOf(c)] = w
+            },
             muMeta = FloatArray(Features.N_META), wHash = wHash, wSnd = FloatArray(Features.BUCKETS),
             idf = FloatArray(Features.BUCKETS) { 1f }, fbBias = -3.0, fbScale = 1.0, wMetaFb = FloatArray(Features.N_META),
         )
@@ -261,6 +266,26 @@ class EngineTest {
         assertEquals(70L, sameSender.similarMessageId)
         // Another sender with a link domain the marked message didn't have gets no "not spam" match.
         assertNotEquals(Reason.SIMILAR_TO_HAM, e.classify(input(again, dlt("VM-HDFCBK-S")), DecisionPolicy()).verdict.reason)
+    }
+
+    @Test
+    fun `the DLT category adds its fixed weight without deciding, and a mark overrides it`() = runBlocking {
+        val e = engine(bundleDir = writeBundle(File(tmp, "bundle"), dltWeights = mapOf('P' to 1.5f, 'T' to -1.5f)))
+        fun logit(p: Float) = ln(p.toDouble() / (1 - p))
+        val notice = "Your order of 2 items has shipped and arrives on Friday"
+        val plain = e.classify(input(notice, dlt("AX-SHOPXY")), DecisionPolicy()).verdict
+        val promo = e.classify(input(notice, dlt("AX-SHOPXY-P")), DecisionPolicy()).verdict
+        val txn = e.classify(input(notice, dlt("JD-SHOPXY-T")), DecisionPolicy()).verdict
+        assertEquals(1.5, logit(promo.probability) - logit(plain.probability), 1e-3)
+        assertEquals(-1.5, logit(txn.probability) - logit(plain.probability), 1e-3)
+        // Ordinary wording stays legitimate under -P, and spam wording stays spam under -T.
+        assertEquals(SpamLabel.HAM, promo.label)
+        val scam = "WINNER! Claim your prize gift card now"
+        assertEquals(SpamLabel.SPAM, e.classify(input(scam, dlt("JD-SHOPXY-T")), DecisionPolicy()).verdict.label)
+        val flagged = e.classify(input(scam, dlt("AX-SHOPXY-P")), DecisionPolicy()).verdict
+        assertEquals(SpamLabel.SPAM, flagged.label)
+        e.learn(listOf(example(90, scam, UserLabel.HAM, senderKey = "AX-SHOPXY-P")))
+        assertEquals(Reason.SIMILAR_TO_HAM, e.classify(input(scam, dlt("AX-SHOPXY-P")), DecisionPolicy()).verdict.reason)
     }
 
     @Test

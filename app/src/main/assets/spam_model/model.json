@@ -1,6 +1,6 @@
 {
-  "bundle_version": "2026.10.27-c1ca7544",
-  "created_utc": "2026-10-27T21:00:35+00:00",
+  "bundle_version": "2026.10.28-3a915978",
+  "created_utc": "2026-10-28T00:49:18+00:00",
   "encoder": {
     "base_model": "sentence-transformers/all-MiniLM-L6-v2@1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
     "dim": 384,
@@ -45,13 +45,17 @@
       "snd_alphanumeric",
       "snd_email",
       "snd_international",
-      "snd_first_contact"
+      "snd_first_contact",
+      "dlt_promotional",
+      "dlt_service",
+      "dlt_transactional",
+      "dlt_government"
     ],
-    "version": "feat_v2"
+    "version": "feat_v3"
   },
   "head": {
     "file": "head_base.bin",
-    "sha256": "4379104f29c9db560e9d6f4f73d71323677df2af16a23138b599f6e709055a81"
+    "sha256": "b167b3fe3f0215b404f3898875731635c2e29c762f94db8344c9ab21296c11f4"
   },
   "knn": {
     "tau_ham": 0.9,
@@ -86,13 +90,13 @@
       "pr_auc_int8_minus_fp32": 5.699549858517727e-05
     },
     "learning": {
-      "diligent_cost_ratio": 1.0054171180931744,
-      "diligent_repeat_campaign_error_ratio": 0.500233912501047,
+      "diligent_cost_ratio": 1.0162162162162163,
+      "diligent_repeat_campaign_error_ratio": 0.5589993933327643,
       "flagged_legit_variants_kept": 1.0,
       "flagged_legit_variants_kept_base": 0.25,
-      "missed_scam_variants_caught": 0.7358333333333333,
-      "missed_scam_variants_caught_base": 0.08833333333333333,
-      "noisy_cost_ratio": 1.0054171180931744,
+      "missed_scam_variants_caught": 0.7533333333333333,
+      "missed_scam_variants_caught_base": 0.08083333333333333,
+      "noisy_cost_ratio": 1.0064864864864864,
       "params": {
         "embed": 1000000.0,
         "ham": 1.0,
@@ -101,7 +105,7 @@
         "snd": 0.25,
         "tau_spam": 0.8
       },
-      "spam_only_cost_ratio": 1.0205850487540629,
+      "spam_only_cost_ratio": 1.0205405405405406,
       "spam_only_probe_fpr_delta": 0.0
     },
     "test": {
@@ -111,7 +115,7 @@
       },
       "at_fpr_budget": {
         "recall": 0.9278025728537674,
-        "threshold": 0.8794437935621152
+        "threshold": 0.8794437935802316
       },
       "balanced": {
         "fpr": 0.0007209805335255948,
@@ -167,16 +171,16 @@
   "schema": 1,
   "thresholds": {
     "fallback": {
-      "aggressive": 0.8196043980924914,
-      "balanced": 0.9411331551527657,
-      "conservative": 0.989689544397025,
-      "warn": 0.5901159378139065
+      "aggressive": 0.8196043980127605,
+      "balanced": 0.9411331553208659,
+      "conservative": 0.9896895444350783,
+      "warn": 0.5901159386660895
     },
     "full": {
-      "aggressive": 0.7448842330466895,
-      "balanced": 0.9813686803984855,
-      "conservative": 0.9973490356772926,
-      "warn": 0.49450947462700956
+      "aggressive": 0.744884233079161,
+      "balanced": 0.9813686804016097,
+      "conservative": 0.9973490356777446,
+      "warn": 0.4945094746697229
     }
   },
   "tokenizer": {

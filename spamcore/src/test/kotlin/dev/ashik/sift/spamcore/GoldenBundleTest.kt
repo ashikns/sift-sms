@@ -2,6 +2,7 @@ package dev.ashik.sift.spamcore
 
 import dev.ashik.sift.spamcore.encoder.OrtTextEncoder
 import dev.ashik.sift.spamcore.features.Features
+import dev.ashik.sift.spamcore.features.SenderFeatures
 import dev.ashik.sift.spamcore.head.LinearHead
 import dev.ashik.sift.spamcore.model.DirectoryBundleSource
 import dev.ashik.sift.spamcore.model.ModelBundle
@@ -51,10 +52,13 @@ class GoldenBundleTest {
             if (sparse.indices.toList() != idx) { failures += "case $i idx"; continue }
             val vals = (c["val"] as JsonArray).map { it.jsonPrimitive.double }
             if (vals.indices.any { abs(vals[it] - sparse.values[it]) > 1e-6 }) failures += "case $i val"
-            val meta = Features.metadata(n)
+            val sender = c["sender"]!!.jsonPrimitive.contentOrNull
+            val dlt = Features.dltCategory(sender)
+            if (dlt != c["dlt"]!!.jsonPrimitive.contentOrNull?.single()) { failures += "case $i dlt"; continue }
+            val meta = Features.metadata(n, SenderFeatures(dlt = dlt))
             val pyMeta = c["meta"]!!.jsonArray.map { it.jsonPrimitive.double }
             if (pyMeta.indices.any { abs(pyMeta[it] - meta[it]) > 1e-6 }) failures += "case $i meta"
-            val sid = Features.senderId(c["sender"]!!.jsonPrimitive.contentOrNull)
+            val sid = Features.senderId(sender)
             if (sid != c["sid"]!!.jsonPrimitive.contentOrNull) { failures += "case $i sid"; continue }
             val snd = Features.snd(sid, n)
             if (snd.indices.toList() != c["snd_idx"]!!.jsonArray.map { it.jsonPrimitive.int }) { failures += "case $i snd_idx"; continue }
