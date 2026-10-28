@@ -53,8 +53,8 @@ class AppGraph(private val context: Context) {
     }
     val latency = LatencyStats()
     val senderInfo by lazy { SenderInfoProvider(db, normalizer) }
-    val coordinator by lazy { ClassificationCoordinator(db, engine, senderInfo, settings, projector, latency) }
-    val rescore by lazy { RescoreService(db, coordinator, projector) }
+    val coordinator by lazy { ClassificationCoordinator(db, engine, senderInfo, settings, projector, repository, latency) }
+    val rescore by lazy { RescoreService(db, coordinator, projector, repository) }
     val visibleThread = VisibleThreadTracker()
     val shortcuts by lazy { ConversationShortcuts(context) }
     val notifier by lazy { MessageNotifier(context, db, shortcuts) }

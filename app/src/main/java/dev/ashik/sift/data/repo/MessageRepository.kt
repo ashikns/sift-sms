@@ -22,7 +22,9 @@ object MessageMapping {
         return mix64(h xor date)
     }
 
-    fun mutableHash(row: ProviderSms): Int = listOf(row.type, row.read, row.status, row.threadId).hashCode()
+    fun mutableHash(row: ProviderSms): Int = mutableHash(row.type, row.read, row.status, row.threadId)
+
+    fun mutableHash(type: Int, read: Boolean, status: Int, threadId: Long): Int = listOf(type, read, status, threadId).hashCode()
 
     private fun mix64(x0: Long): Long {
         var x = x0
@@ -108,6 +110,19 @@ class MessageRepository(
         withContext(Dispatchers.IO) { runCatching { gateway.markThreadRead(threadId) } }
         db.withWriteTransaction {
             if (db.messages().markThreadRead(threadId) > 0) projector.rebuild(listOf(threadId))
+        }
+    }
+
+    /** Marks incoming [messages] unread, in the provider first, so a reconcile in between agrees with the mirror. */
+    suspend fun markUnread(messages: List<MessageEntity>) {
+        val incoming = messages.filter { it.type == MsgType.INBOX }
+        if (incoming.isEmpty()) return
+        withContext(Dispatchers.IO) { runCatching { gateway.markUnread(incoming.map { it.id }) } }
+        db.withWriteTransaction {
+            val changed = incoming.filter {
+                db.messages().markUnread(it.id, MessageMapping.mutableHash(it.type, false, it.status, it.threadId)) > 0
+            }
+            projector.rebuild(changed.map { it.threadId })
         }
     }
 

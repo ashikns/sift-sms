@@ -12,6 +12,7 @@ import dev.ashik.sift.data.db.MessageEntity
 import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.Source
 import dev.ashik.sift.data.repo.ConversationProjector
+import dev.ashik.sift.data.repo.MessageRepository
 import dev.ashik.sift.data.settings.SettingsRepository
 import dev.ashik.sift.spamcore.Cue
 import dev.ashik.sift.spamcore.DecisionPolicy
@@ -71,6 +72,7 @@ class ClassificationCoordinator(
     private val senders: SenderInfoProvider,
     private val settings: SettingsRepository,
     private val projector: ConversationProjector,
+    private val repository: MessageRepository,
     private val latency: LatencyStats,
 ) {
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -108,13 +110,17 @@ class ClassificationCoordinator(
         return Computed(m, scored.verdict, previous)
     }
 
-    /** Stores [c]'s verdict as-is (the user's own label still wins) and rebuilds the conversation. */
+    /**
+     * Stores [c]'s verdict as-is (the user's own label still wins) and rebuilds the conversation. A message whose label
+     * this changes is marked unread.
+     */
     suspend fun apply(c: Computed, effectiveOverride: Int? = null): ClassificationEntity {
         val entity = entityFor(c, effectiveOverride)
         db.withWriteTransaction {
             db.classifications().upsert(entity)
             projector.rebuild(listOf(c.message.threadId))
         }
+        if (changesLabel(c.previous, entity)) repository.markUnread(listOf(c.message))
         return entity
     }
 
@@ -151,7 +157,14 @@ class ClassificationCoordinator(
 
     private fun failOpen() = Verdict(SpamLabel.HAM, Float.NaN, Reason.UNAVAILABLE)
 
-    private companion object {
-        const val TAG = "SiftClassify"
+    companion object {
+        private const val TAG = "SiftClassify"
+
+        /**
+         * True when [next] changes the label of a message that already had a verdict (a first verdict isn't a change).
+         * A deleted mark counts as the verdict it replaced: the model's own verdict changes it if they differ.
+         */
+        fun changesLabel(previous: ClassificationEntity?, next: ClassificationEntity): Boolean =
+            previous != null && previous.effectiveSource != Source.PENDING && next.effectiveLabel != previous.effectiveLabel
     }
 }

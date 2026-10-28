@@ -123,12 +123,16 @@ send_sms "$(num 4)" "$FAM_A"
 send_sms "$(num 5)" "$FAM_B"
 wait_until 15 folder_is "$(num 5)" 0 && pass "new scam family starts in Inbox (model misses it)" || fail "family B folder=$(conv_field "$(num 5)" folder)"
 idle
+call markAllRead >/dev/null # a baseline: which messages the model's verdicts make unread
 RES=$(call markSpam "$(msg_field "$(num 4)" id)")
 [[ "$RES" == *"marked=true"* ]] || fail "markSpam result: $RES"
 folder_is "$(num 4)" 1 && pass "the marked message's conversation moved to Spam" || fail "marked folder=$(conv_field "$(num 4)" folder)"
 # The near-duplicate moves with the re-check that follows the retrain.
 near_dup_moved() { folder_is "$(num 5)" 1 && [[ "$(msg_field "$(num 5)" reason)" == "SIMILAR_TO_SPAM" ]]; }
 wait_until 20 near_dup_moved && pass "near-duplicate moved with SIMILAR_TO_SPAM" || fail "family B reason=$(msg_field "$(num 5)" reason)"
+is_unread() { [[ "$(msg_field "$1" read)" == "0" ]]; }
+wait_until 5 is_unread "$(num 5)" && pass "the message the model moved is unread" || fail "moved near-duplicate read=$(msg_field "$(num 5)" read)"
+[[ "$(msg_field "$(num 4)" read)" == "1" ]] && pass "the message you marked stays read" || fail "marked message read=$(msg_field "$(num 4)" read)"
 send_sms "$(num 6)" "$FAM_C"
 wait_until 15 folder_is "$(num 6)" 1 && pass "new variant from a new sender lands in Spam" || fail "family C folder=$(conv_field "$(num 6)" folder)"
 [[ "$(msg_field "$(num 6)" reason)" == "SIMILAR_TO_SPAM" ]] && pass "reason SIMILAR_TO_SPAM" || fail "family C reason=$(msg_field "$(num 6)" reason)"
@@ -162,6 +166,7 @@ wait_until 20 folder_is "$(num 5)" 0 && pass "the near-duplicate it had pulled i
 unmarked() { local u; u=$(msg_field "$(num 4)" userLabel); [[ -z "$u" || "$u" == "NULL" ]] && folder_is "$(num 4)" 0; }
 wait_until 20 unmarked && pass "the deleted entry's message loses its mark and gets the model's own verdict" \
   || fail "after deleting its entry: userLabel=$(msg_field "$(num 4)" userLabel) folder=$(conv_field "$(num 4)" folder) reason=$(msg_field "$(num 4)" reason)"
+wait_until 5 is_unread "$(num 4)" && pass "the message the model judged again is unread" || fail "re-judged message read=$(msg_field "$(num 4)" read)"
 $A shell input keyevent KEYCODE_BACK
 $A shell input keyevent KEYCODE_HOME
 
@@ -205,12 +210,21 @@ R0=$(rechecks)
 F0=$(seed_stat scamsFlagged)
 # (Matched here: the device shell strips quotes inside --where, and a "+" number then compares as a number.)
 SEED0=$($A shell content query --uri content://sms --projection _id:address 2>/dev/null | tr -d '\r' | grep -E "address=\+15550190000$" | field _id)
+call markAllRead >/dev/null
+[[ "$(seed_stat unread)" == "0" ]] || fail "seeds still unread before the mark: $(seed_stat unread)"
 call markNotSpam "$SEED0" >/dev/null
 wait_until 30 recheck_progress && pass "re-check progress notification" || fail "no re-check progress notification"
 recheck_ran() { [[ "$(rechecks)" -gt "$R0" ]]; }
 wait_until 120 recheck_ran && pass "a re-check of all history ran after the retrain" || fail "no re-check after the mark"
 F1=$(seed_stat scamsFlagged)
 (( F1 <= F0 - 100 )) && pass "the re-check moved old copies out of Spam ($F0 -> $F1 flagged)" || fail "old copies still flagged: $F0 -> $F1"
+# Every copy the re-check moved is unread, in Sift and in the SMS store; the one you marked moved too but stays read.
+U1=$(seed_stat unread)
+(( U1 >= F0 - F1 - 1 )) && pass "every message the re-check moved is unread ($U1 unread)" || fail "only $U1 unread after $((F0 - F1 - 1)) moved by the re-check"
+SEEDS=$($A shell content query --uri content://sms --projection _id:address:read 2>/dev/null | tr -d '\r' | grep -E "address=\+1555019[0-9]{4}, ")
+PU=$(echo "$SEEDS" | grep -c ', read=0$')
+[[ "$PU" == "$U1" ]] && pass "the SMS store has the same messages unread" || fail "SMS store unread=$PU, Sift unread=$U1"
+[[ "$(echo "$SEEDS" | grep -E "_id=$SEED0, " | field read)" == "1" ]] && pass "the message you marked stays read" || fail "marked seed read=$(echo "$SEEDS" | grep -E "_id=$SEED0, " | field read)"
 # Leave no "not spam" mark on a template that release_smoke.sh sends as spam.
 call forgetLearning "$SEED0" >/dev/null
 $A shell input keyevent KEYCODE_HOME

@@ -70,21 +70,3 @@ class ExternalProviderChangeReceiver : BroadcastReceiver() {
         runAsync(context, 8_000) { it.sync.fullReconcile() }
     }
 }
-
-/** Mark read from a notification. */
-class NotificationActionReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val threadId = intent.getLongExtra(EXTRA_THREAD_ID, -1L).takeIf { it > 0 } ?: return
-        when (intent.action) {
-            ACTION_MARK_READ -> runAsync(context, 8_000) { graph ->
-                graph.repository.markThreadRead(threadId)
-                graph.notifier.cancelThread(threadId)
-            }
-        }
-    }
-
-    companion object {
-        const val ACTION_MARK_READ = "dev.ashik.sift.action.MARK_READ"
-        const val EXTRA_THREAD_ID = "threadId"
-    }
-}

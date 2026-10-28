@@ -35,26 +35,22 @@ class ConversationsUiTest {
         displayName = name, photoUri = null,
     )
 
-    private var markedRead: Set<Long>? = null
-
     private fun show(inbox: List<ConversationRow>, spam: List<ConversationRow>) = compose.setContent {
         SiftTheme {
             ConversationsContent(
                 inbox = inbox, spam = spam, scan = null,
                 onOpenThread = {}, onOpenSettings = {},
-                onMarkRead = { markedRead = it }, onDelete = {},
+                onDelete = {},
             )
         }
     }
 
     @Test
-    fun longPressSelectsAndMarksRead() {
+    fun longPressSelects() {
         show(listOf(row(1, "Dinner at 7?", name = "Alex"), row(2, "You won a prize")), emptyList())
         compose.onNodeWithTag("conversation_2").performTouchInput { longClick() }
         compose.onNodeWithText("1 selected").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Mark as read").performClick()
-        compose.waitForIdle()
-        assertEquals(setOf(2L), markedRead)
+        compose.onNodeWithContentDescription("Delete").assertIsDisplayed()
     }
 
     @Test

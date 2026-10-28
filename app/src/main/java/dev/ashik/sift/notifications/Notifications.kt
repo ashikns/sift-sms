@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutInfo
-import android.net.Uri
 import android.telephony.PhoneNumberUtils
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -20,7 +19,6 @@ import androidx.work.WorkManager
 import dev.ashik.sift.R
 import dev.ashik.sift.data.db.AppDatabase
 import dev.ashik.sift.spam.FolderMoves
-import dev.ashik.sift.telephony.receiver.NotificationActionReceiver
 import dev.ashik.sift.ui.MainActivity
 import kotlinx.coroutines.flow.first
 import java.util.Locale
@@ -119,7 +117,6 @@ class MessageNotifier(
             .setShowWhen(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
-        builder.addAction(action(threadId, NotificationActionReceiver.ACTION_MARK_READ, R.string.action_mark_read))
         post(TAG_THREAD, threadId, builder)
     }
 
@@ -226,17 +223,6 @@ class MessageNotifier(
         context, threadId.toInt(), MainActivity.threadIntent(context, threadId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
-
-    private fun actionIntent(threadId: Long, action: String) =
-        Intent(action, Uri.parse("sift://notification/$threadId/$action"), context, NotificationActionReceiver::class.java)
-            .putExtra(NotificationActionReceiver.EXTRA_THREAD_ID, threadId)
-
-    private fun action(threadId: Long, action: String, label: Int): NotificationCompat.Action {
-        val pi = PendingIntent.getBroadcast(
-            context, threadId.toInt(), actionIntent(threadId, action), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        return NotificationCompat.Action.Builder(0, context.getString(label), pi).build()
-    }
 
     fun displayAddress(address: String): String =
         PhoneNumberUtils.formatNumber(address, Locale.getDefault().country.ifEmpty { "US" }) ?: address

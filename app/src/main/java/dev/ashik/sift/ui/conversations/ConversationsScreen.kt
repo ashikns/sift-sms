@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -78,7 +77,7 @@ fun ConversationsScreen(onOpenThread: (Long) -> Unit, onOpenSettings: () -> Unit
     ConversationsContent(
         inbox = inbox, spam = spam, scan = scan,
         onOpenThread = onOpenThread, onOpenSettings = onOpenSettings,
-        onMarkRead = { vm.markRead(it) }, onDelete = { vm.delete(it) },
+        onDelete = { vm.delete(it) },
     )
 }
 
@@ -90,7 +89,6 @@ fun ConversationsContent(
     scan: ScanProgress?,
     onOpenThread: (Long) -> Unit,
     onOpenSettings: () -> Unit,
-    onMarkRead: (Set<Long>) -> Unit,
     onDelete: (Set<Long>) -> Unit,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -127,11 +125,6 @@ fun ConversationsContent(
                     },
                     title = { Text(stringResource(R.string.selected_count, selection.size)) },
                     actions = {
-                        if (!inSpam) {
-                            IconButton(onClick = { onMarkRead(selection); selection = emptySet() }) {
-                                Icon(Icons.Default.Done, stringResource(R.string.action_mark_read))
-                            }
-                        }
                         IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, stringResource(R.string.action_delete)) }
                     },
                 )

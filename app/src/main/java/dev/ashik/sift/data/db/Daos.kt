@@ -49,6 +49,9 @@ interface MessageDao {
     @Query("UPDATE messages SET read = 1 WHERE threadId = :threadId AND read = 0")
     suspend fun markThreadRead(threadId: Long): Int
 
+    @Query("UPDATE messages SET read = 0, mutableHash = :mutableHash WHERE id = :id AND read = 1")
+    suspend fun markUnread(id: Long, mutableHash: Int): Int
+
     @Query(
         "SELECT COUNT(*) FROM messages WHERE senderKey = :senderKey AND type = 1 AND id != :excludeId AND " +
             "(date < :before OR (date = :before AND id < :excludeId))",

@@ -15,6 +15,7 @@ import dev.ashik.sift.data.db.Source
 import dev.ashik.sift.data.db.ThreadFolder
 import dev.ashik.sift.data.db.TrainingExampleEntity
 import dev.ashik.sift.data.repo.ConversationProjector
+import dev.ashik.sift.data.repo.MessageMapping
 import dev.ashik.sift.spamcore.UserLabel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -85,6 +86,22 @@ class DatabaseTest {
         projector.rebuild(listOf(20L))
         assertEquals(Folder.INBOX, conversation(20).folder)
         assertEquals(listOf(10L, 20L, 30L), db.conversations().observeFolder(Folder.INBOX).first().map { it.conversation.threadId }.sorted())
+    }
+
+    @Test
+    fun markUnreadUpdatesTheMirrorAndTheUnreadCount() = runBlocking {
+        db.messages().upsertAll(listOf(msg(1, 10, MsgType.INBOX, 1000), msg(2, 10, MsgType.INBOX, 2000, read = false)))
+        projector.rebuild(listOf(10L))
+        assertEquals(1, conversation(10).unreadCount)
+
+        val hash = MessageMapping.mutableHash(MsgType.INBOX, false, -1, 10)
+        assertEquals(1, db.messages().markUnread(1, hash))
+        assertEquals(0, db.messages().markUnread(2, hash)) // already unread
+        val m = db.messages().get(1)!!
+        assertEquals(false, m.read)
+        assertEquals(hash, m.mutableHash)
+        projector.rebuild(listOf(10L))
+        assertEquals(2, conversation(10).unreadCount)
     }
 
     @Test

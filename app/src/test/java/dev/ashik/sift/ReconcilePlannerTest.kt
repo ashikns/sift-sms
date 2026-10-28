@@ -33,6 +33,13 @@ class ReconcilePlannerTest {
     }
 
     @Test
+    fun `a message marked unread on both sides needs no update`() {
+        val row = p(1, read = false)
+        val key = MessageKey(row.id, MessageMapping.fingerprint(row.address, row.date), MessageMapping.mutableHash(row.type, false, row.status, row.threadId), row.date, row.threadId, null)
+        assertTrue(ReconcilePlanner.plan(listOf(row), listOf(key), now).isEmpty)
+    }
+
+    @Test
     fun `a reused id with a different message is replaced`() {
         val old = p(4, address = "+16505550009", date = now - 50 * hour)
         val plan = ReconcilePlanner.plan(listOf(p(4)), listOf(r(old)), now)

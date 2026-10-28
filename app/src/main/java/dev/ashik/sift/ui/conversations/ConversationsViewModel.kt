@@ -34,13 +34,6 @@ class ConversationsViewModel(private val graph: AppGraph, context: Context) : Vi
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    fun markRead(threadIds: Set<Long>) = viewModelScope.launch {
-        threadIds.forEach {
-            graph.repository.markThreadRead(it)
-            graph.notifier.cancelThread(it)
-        }
-    }
-
     fun delete(threadIds: Set<Long>) = viewModelScope.launch {
         threadIds.forEach(graph.notifier::cancelThread)
         runCatching { graph.repository.deleteThreads(threadIds.toList()) }

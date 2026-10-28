@@ -17,7 +17,6 @@
         <item quantity="one">%d new message</item>
         <item quantity="other">%d new messages</item>
     </plurals>
-    <string name="action_mark_read">Mark as read</string>
     <string name="action_not_spam">Not spam</string>
     <string name="notification_spam_title">Filtered as spam</string>
     <string name="notification_spam_text">A message from %1$s was moved to Spam</string>

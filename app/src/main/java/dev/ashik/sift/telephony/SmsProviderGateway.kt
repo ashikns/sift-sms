@@ -73,6 +73,15 @@ class SmsProviderGateway(context: Context) {
         )
     }
 
+    /** Marks [ids] unread (not unseen: they mustn't notify), in chunks. */
+    fun markUnread(ids: List<Long>): Int = ids.chunked(500).sumOf { chunk ->
+        val placeholders = chunk.joinToString(",") { "?" }
+        resolver.update(
+            Sms.CONTENT_URI, ContentValues().apply { put(Sms.READ, 0) },
+            "${Sms._ID} IN ($placeholders) AND ${Sms.READ} = 1", chunk.map { it.toString() }.toTypedArray(),
+        )
+    }
+
     fun deleteMessage(id: Long): Int = resolver.delete(ContentUris.withAppendedId(Sms.CONTENT_URI, id), null, null)
 
     /** Deletes only the thread's SMS rows; MMS rows the app can't show are left alone. */

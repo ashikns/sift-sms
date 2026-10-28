@@ -11,6 +11,7 @@ import dev.ashik.sift.data.db.MsgType
 import dev.ashik.sift.data.db.Source
 import dev.ashik.sift.data.db.UserLabelCode
 import dev.ashik.sift.data.repo.ConversationProjector
+import dev.ashik.sift.data.repo.MessageRepository
 import dev.ashik.sift.notifications.MessageNotifier
 import dev.ashik.sift.spam.work.WorkScheduler
 import dev.ashik.sift.spamcore.Reason
@@ -30,11 +31,13 @@ import kotlinx.coroutines.sync.withLock
  * Re-scores unlabeled messages after the model or the user's labels change.
  * User-driven verdicts (near-duplicates of a marked message) move messages; model-only flips never move an inbox
  * message to Spam retroactively (it only gets a "Possible spam" badge), but do rescue Spam-folder false positives.
+ * A message whose label changes is marked unread.
  */
 class RescoreService(
     private val db: AppDatabase,
     private val coordinator: ClassificationCoordinator,
     private val projector: ConversationProjector,
+    private val repository: MessageRepository,
 ) {
     /**
      * Serializes re-scores with the user's label changes (FeedbackService takes it too). A re-score reads a message's
@@ -65,6 +68,7 @@ class RescoreService(
     private suspend fun rescore(candidates: List<MessageEntity>) = lock.withLock {
         val updates = ArrayList<ClassificationEntity>()
         val threads = HashSet<Long>()
+        val changed = ArrayList<MessageEntity>()
         for (m in candidates) {
             if (m.type != MsgType.INBOX) continue
             val computed = coordinator.compute(m) ?: continue
@@ -78,15 +82,18 @@ class RescoreService(
             ) {
                 updates += entity
                 threads += m.threadId
+                if (ClassificationCoordinator.changesLabel(previous, entity)) changed += m
             }
         }
         if (updates.isNotEmpty()) {
-            db.withWriteTransaction {
+            val relabeled = db.withWriteTransaction {
                 val relabeled = updates.filter { db.classifications().get(it.messageId)?.userLabel != null }.map { it.messageId }.toSet()
                 updates.removeAll { it.messageId in relabeled }
                 db.classifications().upsertAll(updates)
                 projector.rebuild(threads)
+                relabeled
             }
+            repository.markUnread(changed.filterNot { it.id in relabeled })
         }
     }
 

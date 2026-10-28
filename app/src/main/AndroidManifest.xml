@@ -102,9 +102,6 @@
             </intent-filter>
         </receiver>
 
-        <receiver
-            android:name=".telephony.receiver.NotificationActionReceiver"
-            android:exported="false" />
         <!-- WorkManager's foreground service, used by rescans (classifying stored messages on the device). -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

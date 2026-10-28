@@ -29,6 +29,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *     adb shell content query --uri content://dev.ashik.sift.debug/messages
  *     adb shell content call --uri content://dev.ashik.sift.debug --method awaitIdle
  *     adb shell content call --uri content://dev.ashik.sift.debug --method markSpam --arg <messageId>
+ *     adb shell content call --uri content://dev.ashik.sift.debug --method markAllRead
  *     adb shell content call --uri content://dev.ashik.sift.debug --method forgetLearning [--arg <messageId>]
  *     adb shell content call --uri content://dev.ashik.sift.debug --method seedHistory --arg <count>
  *     adb shell content call --uri content://dev.ashik.sift.debug --method seedStats
@@ -56,10 +57,10 @@ class DebugStateProvider : ContentProvider() {
                     }
                 }
                 "messages" -> MatrixCursor(
-                    arrayOf("id", "threadId", "address", "type", "status", "effectiveLabel", "source", "reason", "score", "userLabel", "classState", "body"),
+                    arrayOf("id", "threadId", "address", "type", "status", "read", "effectiveLabel", "source", "reason", "score", "userLabel", "classState", "body"),
                 ).apply {
                     graph.db.messages().debugMessages(300).forEach {
-                        addRow(arrayOf<Any?>(it.id, it.threadId, it.address, it.type, it.status, it.effectiveLabel, it.effectiveSource, it.reason, it.modelScore, it.userLabel, it.classState, it.body.take(200)))
+                        addRow(arrayOf<Any?>(it.id, it.threadId, it.address, it.type, it.status, if (it.read) 1 else 0, it.effectiveLabel, it.effectiveSource, it.reason, it.modelScore, it.userLabel, it.classState, it.body.take(200)))
                     }
                 }
                 "engine" -> MatrixCursor(arrayOf("bundle", "modelVersion", "examples", "encoder")).apply {
@@ -82,6 +83,8 @@ class DebugStateProvider : ContentProvider() {
                         val label = if (method == "markSpam") UserLabel.SPAM else UserLabel.HAM
                         out.putBoolean("marked", graph.feedback.markMessages(listOf(arg!!.toLong()), label) != null)
                     }
+                    // A baseline for checks of what the model marks unread (in the app only opening a thread marks it read).
+                    "markAllRead" -> graph.db.conversations().all().filter { it.unreadCount > 0 }.forEach { graph.repository.markThreadRead(it.threadId) }
                     "forgetLearning" -> {
                         graph.feedback.forgetLearned(arg?.let { listOf(it.toLong()) } ?: graph.db.trainingExamples().all().map { it.messageId })
                         graph.engine.awaitIdle()
@@ -140,7 +143,7 @@ class DebugStateProvider : ContentProvider() {
         return if (i % 2 == 0) SEED_SCAMS[n % SEED_SCAMS.size].format(n) else SEED_ORDINARY[n % SEED_ORDINARY.size].format(n)
     }
 
-    /** How many seeded messages have a verdict, and how many of each kind are effectively spam. */
+    /** How many seeded messages have a verdict and are unread, and how many of each kind are effectively spam. */
     private suspend fun seedStats(out: Bundle) {
         val ids = withContext(Dispatchers.IO) {
             context!!.contentResolver.query(
@@ -150,12 +153,14 @@ class DebugStateProvider : ContentProvider() {
         val messages = ids.chunked(500).flatMap { graph.db.messages().getAll(it) }
         val verdicts = ids.chunked(500).flatMap { graph.db.classifications().getAll(it) }.associateBy { it.messageId }
         var classified = 0
+        var unread = 0
         var scams = 0
         var scamsFlagged = 0
         var ordinaryFlagged = 0
         for (m in messages) {
             val v = verdicts[m.id]
             if (v?.state == ClassState.DONE) classified++
+            if (!m.read) unread++
             val flagged = v?.effectiveLabel == LabelCode.SPAM
             if (m.address.takeLast(4).toInt() % 2 == 0) {
                 scams++
@@ -166,6 +171,7 @@ class DebugStateProvider : ContentProvider() {
         }
         out.putInt("seeded", messages.size)
         out.putInt("classified", classified)
+        out.putInt("unread", unread)
         out.putInt("scams", scams)
         out.putInt("scamsFlagged", scamsFlagged)
         out.putInt("ordinaryFlagged", ordinaryFlagged)

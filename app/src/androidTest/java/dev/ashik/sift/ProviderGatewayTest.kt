@@ -40,6 +40,9 @@ class ProviderGatewayTest {
         assertEquals(id, gateway.findDuplicateIncoming("+16505559876", old, "gateway test"))
         assertTrue(gateway.markThreadRead(row.threadId) >= 1)
         assertTrue(gateway.query(id)!!.read)
+        assertEquals(1, gateway.markUnread(listOf(id)))
+        assertFalse(gateway.query(id)!!.read)
+        assertEquals(0, gateway.markUnread(listOf(id)))
         assertEquals(1, gateway.deleteMessage(id))
         assertNull(gateway.query(id))
     }

@@ -41,6 +41,9 @@ plain text, never clickable; long-press a message to select and copy all or part
      another sender's similar text.
    - Then the open conversation is re-checked with the new model first ("Re-checking now…" shows until it's done),
      then every other message, however old; the progress shows in the notification shade.
+   - A message whose label the model changes (in a re-check, a rescan, or after you delete its learning entry)
+     becomes unread, so its conversation stands out until you open it; opening a conversation is the only way to mark
+     it read. Your own marks don't make a message unread.
    - Deleting an entry under Settings → Learning entries removes that mark: Sift forgets it, retrains, and judges the
      message again on its own.
    - The embedding weights, message-feature weights and sender-type signals stay fixed. That way a mark on one
