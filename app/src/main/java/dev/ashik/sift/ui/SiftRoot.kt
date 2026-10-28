@@ -49,6 +49,13 @@ fun SiftRoot(pendingDestination: StateFlow<NavKey?>, onDestinationConsumed: () -
         backStack.add(key)
         onDestinationConsumed()
     }
+
+    // A screen's own back arrow closes that screen once: tapped again while it slides away, it must not close the one below.
+    fun close(key: NavKey) {
+        val index = backStack.lastIndexOf(key)
+        if (index > 0) backStack.removeAt(index)
+    }
+
     NavDisplay(
         backStack = backStack,
         onBack = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) },
@@ -67,20 +74,20 @@ fun SiftRoot(pendingDestination: StateFlow<NavKey?>, onDestinationConsumed: () -
                 )
             }
             entry<ThreadKey> { key ->
-                ThreadScreen(key = key, onBack = { backStack.removeAt(backStack.lastIndex) })
+                ThreadScreen(key = key, onBack = { close(key) })
             }
             entry<SettingsKey> {
                 SettingsScreen(
-                    onBack = { backStack.removeAt(backStack.lastIndex) },
+                    onBack = { close(SettingsKey) },
                     onOpenStats = { backStack.add(ModelStatsKey) },
                     onOpenLearning = { backStack.add(LearningKey) },
                 )
             }
             entry<ModelStatsKey> {
-                ModelStatsScreen(onBack = { backStack.removeAt(backStack.lastIndex) })
+                ModelStatsScreen(onBack = { close(ModelStatsKey) })
             }
             entry<LearningKey> {
-                LearningScreen(onBack = { backStack.removeAt(backStack.lastIndex) })
+                LearningScreen(onBack = { close(LearningKey) })
             }
         },
     )
